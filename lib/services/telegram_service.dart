@@ -1,6 +1,7 @@
 // lib/services/telegram_service.dart
 
 import 'dart:io';
+import 'dart:math';
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 
@@ -103,7 +104,9 @@ class TelegramService {
       if (result.ok || result.blocked || !result.retryable) return result;
       if (attempt < maxRetries) {
         onRetry?.call(attempt);
-        await Future.delayed(Duration(seconds: attempt * 2));
+        // Faster retry with jitter: 500ms, 1s, 1.5s
+        final delay = 500 + (attempt * 500) + Random().nextInt(200);
+        await Future.delayed(Duration(milliseconds: delay));
       }
     }
     return TelegramResult(ok: false, error: 'Max retries exceeded');

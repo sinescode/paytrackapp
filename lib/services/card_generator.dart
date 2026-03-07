@@ -5,12 +5,23 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 
 class CardGenerator {
+  // Cache generated cards to avoid re-rendering
+  static final Map<String, Uint8List> _cache = {};
+
   static Future<Uint8List> generate({
     required String userId,
     required String displayName,
     required double pending,
     required String date,
   }) async {
+    // Create cache key
+    final cacheKey = '$userId-$pending-$date';
+    
+    // Return cached if available
+    if (_cache.containsKey(cacheKey)) {
+      return _cache[cacheKey]!;
+    }
+
     const W = 960.0;
     const H = 480.0;
     const P = 56.0;
@@ -51,7 +62,7 @@ class CardGenerator {
             const Rect.fromLTWH(P, P, AV, AV), const Radius.circular(AVR)),
         avatarPaint);
 
-    // Avatar initial — top-left aligned, positioned so it sits visually at the top of the avatar
+    // Avatar initial
     _drawText(canvas, initial,
         x: P + 18,
         y: P + 14,
@@ -59,15 +70,15 @@ class CardGenerator {
         weight: FontWeight.w700,
         color: Colors.white);
 
-    // 3. Name — mono font
+    // 3. Name
     _drawText(canvas, displayName,
         x: P + AV + 28, y: P + 8, size: 32, weight: FontWeight.w700, color: const Color(0xFF0F172A));
 
-    // 4. User ID — mono font
+    // 4. User ID
     _drawText(canvas, 'ID: $userId',
         x: P + AV + 28, y: P + 54, size: 22, weight: FontWeight.w400, color: const Color(0xFF64748B));
 
-    // 5. PAYTRACK watermark — mono font
+    // 5. PAYTRACK watermark
     _drawTextRight(canvas, 'PAYTRACK',
         right: P, y: P + AV / 2 - 11, size: 20, weight: FontWeight.w700, color: const Color(0xFFCBD5E1));
 
@@ -78,12 +89,12 @@ class CardGenerator {
       ..strokeWidth = 2;
     canvas.drawLine(Offset(P, divY), Offset(W - P, divY), divPaint);
 
-    // 7. Balance label — mono font
+    // 7. Balance label
     final lblY = divY + 30;
     _drawText(canvas, balLabel,
         x: P, y: lblY, size: 20, weight: FontWeight.w600, color: const Color(0xFF94A3B8));
 
-    // 8. Balance amount — mono font
+    // 8. Balance amount
     _drawText(canvas, '৳$absPend',
         x: P, y: lblY + 34, size: 72, weight: FontWeight.w500, color: balColor);
 
@@ -107,14 +118,18 @@ class CardGenerator {
     _drawText(canvas, label,
         x: P + 36, y: pillY + pillH / 2 - 12, size: 22, weight: FontWeight.w600, color: pillFg);
 
-    // 10. Date — mono font
+    // 10. Date
     _drawTextRight(canvas, date,
         right: P, y: pillY + pillH / 2 - 11, size: 20, weight: FontWeight.w400, color: const Color(0xFF94A3B8));
 
     final picture = recorder.endRecording();
     final img = await picture.toImage(W.toInt(), H.toInt());
     final byteData = await img.toByteData(format: ui.ImageByteFormat.png);
-    return byteData!.buffer.asUint8List();
+    final bytes = byteData!.buffer.asUint8List();
+    
+    // Cache the result
+    _cache[cacheKey] = bytes;
+    return bytes;
   }
 
   static TextPainter _makeTP(String text,
@@ -126,7 +141,7 @@ class CardGenerator {
       text: TextSpan(
         text: text,
         style: TextStyle(
-          fontFamily: 'monospace', // Always mono
+          fontFamily: 'monospace',
           fontSize: size,
           fontWeight: weight,
           color: color,
@@ -160,4 +175,7 @@ class CardGenerator {
     tp.layout(maxWidth: 600);
     tp.paint(canvas, Offset(960 - right - tp.width, y));
   }
+  
+  // Clear cache if memory becomes an issue
+  static void clearCache() => _cache.clear();
 }

@@ -307,7 +307,7 @@ class _UserTile extends StatelessWidget {
           '৳${user.pending.toStringAsFixed(2)}',
           style: TextStyle(
             fontWeight: FontWeight.w700,
-            fontSize: 15,
+            FontSize: 15,
             color: isCredit ? kGreen : kRed,
             fontFamily: 'monospace',
           ),
@@ -317,14 +317,17 @@ class _UserTile extends StatelessWidget {
   }
 }
 
-// ── Send All Dialog ─────────────────────────────────────────────────────────
+// ── OPTIMIZED Send All Dialog ───────────────────────────────────────────────
 
 class _SendAllDialog extends StatefulWidget {
   final List<UserSummary> users;
   final String date;
   final TelegramService telegram;
-  const _SendAllDialog(
-      {required this.users, required this.date, required this.telegram});
+  const _SendAllDialog({
+    required this.users,
+    required this.date,
+    required this.telegram,
+  });
 
   @override
   State<_SendAllDialog> createState() => _SendAllDialogState();
@@ -337,61 +340,123 @@ class _SendAllDialogState extends State<_SendAllDialog> {
   int _blocked = 0;
   int _done = 0;
   bool _finished = false;
+  bool _cancelled = false;
+  bool _preparing = true;
+  String _status = 'Preparing cards...';
+
+  // Process 5 concurrent sends (respects Telegram rate limits)
+  static const int _concurrency = 5;
 
   @override
   void initState() {
     super.initState();
-    _run();
+    _runOptimized();
   }
 
-  Future<void> _run() async {
-    for (final user in widget.users) {
-      _addLog(user.displayName, 'pending', 'rendering...');
-      try {
-        final bytes = await CardGenerator.generate(
-          userId: user.userId,
-          displayName: user.displayName,
-          pending: user.pending,
-          date: widget.date,
-        );
-        _updateLastLog(user.displayName, 'send', 'sending...');
+  Future<void> _runOptimized() async {
+    try {
+      // PHASE 1: Pre-generate ALL cards in parallel (CPU-bound)
+      setState(() {
+        _preparing = true;
+        _status = 'Generating ${widget.users.length} cards...';
+      });
 
-        final result = await widget.telegram.sendPhotoWithRetry(
-          userId: user.userId,
-          photoBytes: bytes,
-          date: widget.date,
-          onRetry: (a) => _updateLastLog(user.displayName, 'retry', 'retry $a...'),
-        );
+      final cardFutures = widget.users.map((user) => _generateCard(user)).toList();
+      final cards = await Future.wait(cardFutures);
 
-        if (result.ok) {
-          _sent++;
-          _updateLastLog(user.displayName, 'ok', 'sent ✓');
-        } else if (result.blocked) {
-          _blocked++;
-          _updateLastLog(user.displayName, 'blocked', 'blocked');
-        } else {
-          _failed++;
-          _updateLastLog(user.displayName, 'err', result.error ?? 'failed');
+      final userCards = <String, Uint8List>{};
+      for (int i = 0; i < widget.users.length; i++) {
+        if (cards[i] != null) {
+          userCards[widget.users[i].userId] = cards[i]!;
         }
-      } catch (e) {
-        _failed++;
-        _updateLastLog(user.displayName, 'err', e.toString());
       }
-      setState(() => _done++);
-      await Future.delayed(const Duration(milliseconds: 200));
+
+      if (_cancelled) return;
+
+      setState(() {
+        _preparing = false;
+        _status = 'Sending...';
+      });
+
+      // PHASE 2: Send in parallel batches (I/O-bound)
+      final queue = widget.users.where((u) => userCards.containsKey(u.userId)).toList();
+      
+      while (queue.isNotEmpty && !_cancelled) {
+        final batch = queue.take(_concurrency).toList();
+        queue.removeRange(0, batch.length);
+
+        // Process batch concurrently
+        await Future.wait(
+          batch.map((user) => _sendToUser(user, userCards[user.userId]!)),
+          eagerError: false,
+        );
+      }
+
+      setState(() => _finished = true);
+    } catch (e) {
+      setState(() {
+        _status = 'Error: $e';
+        _finished = true;
+      });
     }
-    setState(() => _finished = true);
   }
 
-  void _addLog(String name, String status, String msg) {
-    setState(() => _logs.add(_LogEntry(name: name, status: status, msg: msg)));
+  Future<Uint8List?> _generateCard(UserSummary user) async {
+    try {
+      return await CardGenerator.generate(
+        userId: user.userId,
+        displayName: user.displayName,
+        pending: user.pending,
+        date: widget.date,
+      );
+    } catch (e) {
+      _addLog(user.userId, user.displayName, 'err', 'Card generation failed');
+      _failed++;
+      _done++;
+      return null;
+    }
   }
 
-  void _updateLastLog(String name, String status, String msg) {
+  Future<void> _sendToUser(UserSummary user, Uint8List bytes) async {
+    if (_cancelled) return;
+
+    _addLog(user.userId, user.displayName, 'pending', 'sending...');
+
+    try {
+      final result = await widget.telegram.sendPhotoWithRetry(
+        userId: user.userId,
+        photoBytes: bytes,
+        date: widget.date,
+        onRetry: (a) => _updateLog(user.userId, 'retry', 'retry $a...'),
+      );
+
+      if (result.ok) {
+        _sent++;
+        _updateLog(user.userId, 'ok', 'sent ✓');
+      } else if (result.blocked) {
+        _blocked++;
+        _updateLog(user.userId, 'blocked', 'blocked by user');
+      } else {
+        _failed++;
+        _updateLog(user.userId, 'err', result.error ?? 'failed');
+      }
+    } catch (e) {
+      _failed++;
+      _updateLog(user.userId, 'err', e.toString());
+    }
+
+    setState(() => _done++);
+  }
+
+  void _addLog(String id, String name, String status, String msg) {
+    setState(() => _logs.add(_LogEntry(id: id, name: name, status: status, msg: msg)));
+  }
+
+  void _updateLog(String id, String status, String msg) {
     setState(() {
       for (int i = _logs.length - 1; i >= 0; i--) {
-        if (_logs[i].name == name) {
-          _logs[i] = _LogEntry(name: name, status: status, msg: msg);
+        if (_logs[i].id == id) {
+          _logs[i] = _LogEntry(id: id, name: _logs[i].name, status: status, msg: msg);
           break;
         }
       }
@@ -402,36 +467,75 @@ class _SendAllDialogState extends State<_SendAllDialog> {
   Widget build(BuildContext context) {
     final total = widget.users.length;
     final pct = total > 0 ? _done / total : 0.0;
+
     return AlertDialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      title: const Text('Sending to all users',
-          style: TextStyle(fontWeight: FontWeight.w700)),
+      title: Row(
+        children: [
+          const Expanded(
+            child: Text('Send to All Users',
+                style: TextStyle(fontWeight: FontWeight.w700)),
+          ),
+          if (!_finished)
+            IconButton(
+              icon: const Icon(Icons.close, size: 20),
+              onPressed: () {
+                setState(() => _cancelled = true);
+                Navigator.pop(context);
+              },
+            ),
+        ],
+      ),
       content: SizedBox(
         width: 360,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            LinearProgressIndicator(value: pct, borderRadius: BorderRadius.circular(8)),
-            const SizedBox(height: 8),
+            if (_preparing) ...[
+              const CircularProgressIndicator(strokeWidth: 3),
+              const SizedBox(height: 12),
+              Text(_status, style: TextStyle(color: kSlate500, fontSize: 13)),
+            ] else ...[
+              LinearProgressIndicator(
+                value: pct,
+                borderRadius: BorderRadius.circular(8),
+                backgroundColor: kSlate200,
+              ),
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('$_done / $total',
+                      style: const TextStyle(fontSize: 12, color: kSlate500)),
+                  Text('${(pct * 100).round()}%',
+                      style: const TextStyle(fontSize: 12, color: kSlate500)),
+                ],
+              ),
+            ],
+            const SizedBox(height: 12),
+            // Stats badges
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Text('$_done / $total',
-                    style: const TextStyle(fontSize: 12, color: kSlate500)),
-                Text('${(pct * 100).round()}%',
-                    style: const TextStyle(fontSize: 12, color: kSlate500)),
+                _StatBadge(count: _sent, color: kGreen, label: 'sent'),
+                const SizedBox(width: 8),
+                _StatBadge(count: _failed, color: kRed, label: 'failed'),
+                const SizedBox(width: 8),
+                _StatBadge(count: _blocked, color: Colors.amber, label: 'blocked'),
               ],
             ),
             const SizedBox(height: 12),
             Container(
               height: 200,
               decoration: BoxDecoration(
-                  border: Border.all(color: kSlate200),
-                  borderRadius: BorderRadius.circular(8)),
+                border: Border.all(color: kSlate200),
+                borderRadius: BorderRadius.circular(8),
+              ),
               child: ListView.builder(
                 padding: const EdgeInsets.all(8),
                 itemCount: _logs.length,
-                itemBuilder: (_, i) => _LogRow(entry: _logs[_logs.length - 1 - i]),
+                reverse: true,
+                itemBuilder: (_, i) => _LogRow(entry: _logs[i]),
               ),
             ),
           ],
@@ -441,19 +545,45 @@ class _SendAllDialogState extends State<_SendAllDialog> {
         if (_finished)
           ElevatedButton(
             onPressed: () => Navigator.pop(context),
-            child:
-                Text('Done — $_sent sent, $_failed failed, $_blocked blocked'),
+            child: Text('Done — $_sent sent, $_failed failed, $_blocked blocked'),
           ),
       ],
     );
   }
 }
 
+class _StatBadge extends StatelessWidget {
+  final int count;
+  final Color color;
+  final String label;
+  const _StatBadge({required this.count, required this.color, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text('$count $label',
+          style: TextStyle(
+              fontSize: 11, color: color, fontWeight: FontWeight.w600)),
+    );
+  }
+}
+
 class _LogEntry {
+  final String id;
   final String name;
   final String status;
   final String msg;
-  _LogEntry({required this.name, required this.status, required this.msg});
+  _LogEntry({
+    required this.id,
+    required this.name,
+    required this.status,
+    required this.msg,
+  });
 }
 
 class _LogRow extends StatelessWidget {
