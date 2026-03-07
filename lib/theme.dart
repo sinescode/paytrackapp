@@ -30,7 +30,7 @@ ThemeData buildTheme() => ThemeData(
           fontSize: 17,
         ),
       ),
-      cardTheme: CardTheme(
+      cardTheme: CardThemeData(
         color: Colors.white,
         elevation: 0,
         shape: RoundedRectangleBorder(
