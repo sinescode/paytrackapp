@@ -1,7 +1,7 @@
 // lib/services/data_service.dart
 
 import 'dart:io';
-import 'package:csv/csv.dart';
+import 'package:csv/csv.dart';  // This stays the same
 import '../models/csv_entry.dart';
 import '../models/tier_model.dart';
 import 'storage_service.dart';
@@ -36,8 +36,11 @@ class DataService {
     final rows = <CsvEntry>[];
     try {
       final content = file.readAsStringSync();
-      final lines = CsvToListConverter().convert(content, eol: '\n');
-
+      
+      // FIX: Use csv.decode() instead of CsvToListConverter for v7 API
+      // The v7 API automatically detects line endings, so no need for eol parameter
+      final lines = csv.decode(content);
+      
       if (lines.isEmpty) return rows;
 
       // Find header indices
