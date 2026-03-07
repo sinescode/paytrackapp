@@ -36,7 +36,8 @@ class DataService {
     final rows = <CsvEntry>[];
     try {
       final content = file.readAsStringSync();
-      final lines = CsvToListConverter(eol: '\n').convert(content);
+      final lines = const CsvToListConverter().convert(content, eol: '\n');
+
       if (lines.isEmpty) return rows;
 
       // Find header indices
