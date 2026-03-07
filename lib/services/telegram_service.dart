@@ -49,8 +49,15 @@ class TelegramService {
       return TelegramResult(ok: false, blocked: true, error: 'Previously blocked');
     }
 
-    final caption =
-        '<b>User ID :</b> <code>$userId</code>\n\nDate : <b>$date</b>\n<i>For payment contact admin</i> @turja_un';
+    final caption = '''
+      🧾 <b>Payment Receipt</b>
+      
+      👤 <b>User ID:</b> <code>$userId</code>
+      📅 <b>Date:</b> $date
+      
+      📨 Please <b>forward this message</b> to admin for payment verification.
+      👨‍💼 <b>Admin:</b> @turja_un
+      ''';
 
     try {
       final request = http.MultipartRequest(
