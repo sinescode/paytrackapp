@@ -6,6 +6,48 @@ import '../models/tier_model.dart';
 import '../services/storage_service.dart';
 import '../theme.dart';
 
+// ── Shared confirmation dialog helper ────────────────────────────────────────
+
+Future<bool> _showConfirmDialog(
+  BuildContext context, {
+  required String title,
+  required String message,
+  String confirmLabel = 'Confirm',
+  Color confirmColor = kRed,
+  IconData? icon,
+}) async {
+  final result = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      title: Row(
+        children: [
+          if (icon != null) ...[
+            Icon(icon, color: confirmColor, size: 22),
+            const SizedBox(width: 8),
+          ],
+          Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+        ],
+      ),
+      content: Text(message, style: const TextStyle(fontSize: 14, color: kSlate500)),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, false),
+          child: const Text('Cancel'),
+        ),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(backgroundColor: confirmColor),
+          onPressed: () => Navigator.pop(ctx, true),
+          child: Text(confirmLabel, style: const TextStyle(color: Colors.white)),
+        ),
+      ],
+    ),
+  );
+  return result ?? false;
+}
+
+// ── Settings Screen ───────────────────────────────────────────────────────────
+
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
@@ -118,6 +160,16 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
   }
 
   Future<void> _exportConfig() async {
+    final confirmed = await _showConfirmDialog(
+      context,
+      title: 'Export Config',
+      message: 'This will save the current settings to:\n${_storage.configExportPath}\n\nAny existing file will be overwritten.',
+      confirmLabel: 'Export',
+      confirmColor: kGreen,
+      icon: Icons.file_upload_outlined,
+    );
+    if (!confirmed) return;
+
     try {
       await _save();
       final path = await _storage.exportConfig();
@@ -134,6 +186,16 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
   }
 
   Future<void> _importConfig() async {
+    final confirmed = await _showConfirmDialog(
+      context,
+      title: 'Import Config',
+      message: 'Importing will replace your current settings with the file contents. Unsaved changes will be lost.',
+      confirmLabel: 'Import',
+      confirmColor: kGreen,
+      icon: Icons.file_download_outlined,
+    );
+    if (!confirmed) return;
+
     // Try default path first
     final success = await _storage.importConfig();
     if (success) {
@@ -259,6 +321,24 @@ class _TierDefsTab extends StatelessWidget {
   final VoidCallback onChanged;
   const _TierDefsTab({required this.rows, required this.onChanged});
 
+  Future<void> _confirmDelete(BuildContext context, int index) async {
+    final tierName = rows[index].name.text.trim();
+    final confirmed = await _showConfirmDialog(
+      context,
+      title: 'Delete Tier',
+      message: tierName.isNotEmpty
+          ? 'Delete tier "$tierName"? This cannot be undone.'
+          : 'Delete this tier? This cannot be undone.',
+      confirmLabel: 'Delete',
+      confirmColor: kRed,
+      icon: Icons.delete_outline,
+    );
+    if (confirmed) {
+      rows.removeAt(index);
+      onChanged();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -283,7 +363,7 @@ class _TierDefsTab extends StatelessWidget {
                         const SizedBox(width: 8),
                         IconButton(
                           icon: const Icon(Icons.delete_outline, color: kRed),
-                          onPressed: () { rows.removeAt(i); onChanged(); },
+                          onPressed: () => _confirmDelete(context, i),
                         ),
                       ],
                     ),
@@ -347,6 +427,24 @@ class _AssignTab extends StatelessWidget {
   final VoidCallback onChanged;
   const _AssignTab({required this.rows, required this.tierDefs, required this.onChanged});
 
+  Future<void> _confirmDelete(BuildContext context, int index) async {
+    final userId = rows[index].userId.text.trim();
+    final confirmed = await _showConfirmDialog(
+      context,
+      title: 'Remove Assignment',
+      message: userId.isNotEmpty
+          ? 'Remove tier assignment for user "$userId"?'
+          : 'Remove this user assignment?',
+      confirmLabel: 'Remove',
+      confirmColor: kRed,
+      icon: Icons.person_remove_outlined,
+    );
+    if (confirmed) {
+      rows.removeAt(index);
+      onChanged();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -381,7 +479,7 @@ class _AssignTab extends StatelessWidget {
                     ),
                     IconButton(
                       icon: const Icon(Icons.delete_outline, color: kRed),
-                      onPressed: () { rows.removeAt(i); onChanged(); },
+                      onPressed: () => _confirmDelete(context, i),
                     ),
                   ],
                 ),
@@ -421,6 +519,24 @@ class _NamesTab extends StatelessWidget {
   final VoidCallback onChanged;
   const _NamesTab({required this.rows, required this.onChanged});
 
+  Future<void> _confirmDelete(BuildContext context, int index) async {
+    final userId = rows[index].userId.text.trim();
+    final confirmed = await _showConfirmDialog(
+      context,
+      title: 'Delete Name',
+      message: userId.isNotEmpty
+          ? 'Delete custom name for user "$userId"?'
+          : 'Delete this custom name entry?',
+      confirmLabel: 'Delete',
+      confirmColor: kRed,
+      icon: Icons.delete_outline,
+    );
+    if (confirmed) {
+      rows.removeAt(index);
+      onChanged();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -442,7 +558,7 @@ class _NamesTab extends StatelessWidget {
                         decoration: const InputDecoration(labelText: 'Display Name'))),
                     IconButton(
                       icon: const Icon(Icons.delete_outline, color: kRed),
-                      onPressed: () { rows.removeAt(i); onChanged(); },
+                      onPressed: () => _confirmDelete(context, i),
                     ),
                   ],
                 ),

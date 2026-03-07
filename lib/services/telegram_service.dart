@@ -29,6 +29,15 @@ class TelegramService {
 
   final Set<String> blockedUsers = {};
 
+  // Escape HTML special characters to prevent injection
+  String _escapeHtml(String text) {
+    return text
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;');
+  }
+
   bool _isBlockedError(String? msg) {
     if (msg == null) return false;
     final lower = msg.toLowerCase();
@@ -49,15 +58,29 @@ class TelegramService {
       return TelegramResult(ok: false, blocked: true, error: 'Previously blocked');
     }
 
+    // Build caption with escaped user input
+    final escapedUserId = _escapeHtml(userId);
+    final escapedDate = _escapeHtml(date);
+
+    // Use a raw string (triple quotes) and trim each line to avoid unwanted spaces.
+    // The closing quotes are placed without leading spaces so the string ends cleanly.
     final caption = '''
-      🧾 <b>Payment Receipt</b>
-      
-      👤 <b>User ID:</b> <code>$userId</code>
-      📅 <b>Date:</b> $date
-      
-      📨 Please <b>forward this message</b> to admin for payment verification.
-      👨‍💼 <b>Admin:</b> @turja_un
-      ''';
+🧾 <b>Payment Receipt</b>
+
+👤 <b>User ID:</b> <code>$escapedUserId</code>
+📅 <b>Date:</b> $escapedDate
+
+📨 Please <b>forward this message</b> to admin for payment verification.
+👨‍💼 <b>Admin:</b> @turja_un
+'''.trim(); // trim removes any trailing newline – optional
+
+    // Telegram caption limit is 1024 characters
+    if (caption.length > 1024) {
+      return TelegramResult(
+        ok: false,
+        error: 'Caption exceeds 1024 characters (${caption.length})',
+      );
+    }
 
     try {
       final request = http.MultipartRequest(
@@ -86,6 +109,7 @@ class TelegramService {
         return TelegramResult(ok: false, blocked: true, error: 'User blocked bot');
       }
 
+      // Non‑retryable errors: Bad Request (e.g. invalid chat_id) or Forbidden
       final retryable = !json.contains('Bad Request') && !json.contains('Forbidden');
       return TelegramResult(ok: false, retryable: retryable, error: json);
     } on SocketException {
