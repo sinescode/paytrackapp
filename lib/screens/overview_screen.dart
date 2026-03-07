@@ -307,7 +307,7 @@ class _UserTile extends StatelessWidget {
           '৳${user.pending.toStringAsFixed(2)}',
           style: TextStyle(
             fontWeight: FontWeight.w700,
-            FontSize: 15,
+            fontSize: 15,
             color: isCredit ? kGreen : kRed,
             fontFamily: 'monospace',
           ),
