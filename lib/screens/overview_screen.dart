@@ -2,6 +2,7 @@
 
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import '../models/csv_entry.dart';
 import '../services/data_service.dart';
@@ -53,7 +54,11 @@ class _OverviewScreenState extends State<OverviewScreen> {
     setState(() {
       _filtered = q.isEmpty
           ? _users
-          : _users.where((u) => u.userId.toLowerCase().contains(lower) || u.displayName.toLowerCase().contains(lower)).toList();
+          : _users
+              .where((u) =>
+                  u.userId.toLowerCase().contains(lower) ||
+                  u.displayName.toLowerCase().contains(lower))
+              .toList();
     });
   }
 
@@ -80,8 +85,10 @@ class _OverviewScreenState extends State<OverviewScreen> {
         title: Row(
           children: [
             Container(
-              width: 28, height: 28,
-              decoration: BoxDecoration(color: kBlue, borderRadius: BorderRadius.circular(8)),
+              width: 28,
+              height: 28,
+              decoration:
+                  BoxDecoration(color: kBlue, borderRadius: BorderRadius.circular(8)),
               child: const Icon(Icons.add, color: Colors.white, size: 16),
             ),
             const SizedBox(width: 8),
@@ -97,7 +104,8 @@ class _OverviewScreenState extends State<OverviewScreen> {
           IconButton(
             icon: const Icon(Icons.settings_outlined),
             onPressed: () async {
-              await Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsScreen()));
+              await Navigator.push(
+                  context, MaterialPageRoute(builder: (_) => const SettingsScreen()));
               _load();
             },
           ),
@@ -125,11 +133,19 @@ class _OverviewScreenState extends State<OverviewScreen> {
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
                                         Text('TOTAL PENDING',
-                                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: kSlate500, letterSpacing: 1)),
+                                            style: TextStyle(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w600,
+                                                color: kSlate500,
+                                                letterSpacing: 1)),
                                         const SizedBox(height: 4),
                                         Text(
                                           '৳${_totalPending.toStringAsFixed(2)}',
-                                          style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w700, color: kRed, fontFamily: 'monospace'),
+                                          style: const TextStyle(
+                                              fontSize: 28,
+                                              fontWeight: FontWeight.w700,
+                                              color: kRed,
+                                              fontFamily: 'monospace'),
                                         ),
                                       ],
                                     ),
@@ -137,10 +153,18 @@ class _OverviewScreenState extends State<OverviewScreen> {
                                   Column(
                                     crossAxisAlignment: CrossAxisAlignment.end,
                                     children: [
-                                      Text('USERS', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: kSlate500, letterSpacing: 1)),
+                                      Text('USERS',
+                                          style: TextStyle(
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w600,
+                                              color: kSlate500,
+                                              letterSpacing: 1)),
                                       const SizedBox(height: 4),
                                       Text('${_filtered.length}',
-                                          style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w700, color: kSlate900)),
+                                          style: const TextStyle(
+                                              fontSize: 24,
+                                              fontWeight: FontWeight.w700,
+                                              color: kSlate900)),
                                     ],
                                   ),
                                 ],
@@ -155,7 +179,8 @@ class _OverviewScreenState extends State<OverviewScreen> {
                               child: ElevatedButton.icon(
                                 style: ElevatedButton.styleFrom(
                                     backgroundColor: kTelegram,
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                                    shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(12))),
                                 onPressed: _sendAll,
                                 icon: const Icon(Icons.send, size: 16),
                                 label: const Text('Send All via Telegram Bot'),
@@ -172,7 +197,10 @@ class _OverviewScreenState extends State<OverviewScreen> {
                               suffixIcon: _search.text.isNotEmpty
                                   ? IconButton(
                                       icon: const Icon(Icons.clear, size: 16),
-                                      onPressed: () { _search.clear(); _filter(''); })
+                                      onPressed: () {
+                                        _search.clear();
+                                        _filter('');
+                                      })
                                   : null,
                             ),
                           ),
@@ -188,8 +216,11 @@ class _OverviewScreenState extends State<OverviewScreen> {
                           children: [
                             Icon(Icons.check_circle_outline, size: 48, color: kGreen),
                             SizedBox(height: 12),
-                            Text('All clear', style: TextStyle(fontWeight: FontWeight.w600, color: kSlate700)),
-                            Text('No users found', style: TextStyle(color: kSlate400, fontSize: 13)),
+                            Text('All clear',
+                                style: TextStyle(
+                                    fontWeight: FontWeight.w600, color: kSlate700)),
+                            Text('No users found',
+                                style: TextStyle(color: kSlate400, fontSize: 13)),
                           ],
                         ),
                       ),
@@ -205,7 +236,8 @@ class _OverviewScreenState extends State<OverviewScreen> {
                               await Navigator.push(
                                 context,
                                 MaterialPageRoute(
-                                    builder: (_) => UserDetailScreen(userId: _filtered[i].userId)),
+                                    builder: (_) =>
+                                        UserDetailScreen(userId: _filtered[i].userId)),
                               );
                               _load();
                             },
@@ -226,9 +258,19 @@ class _UserTile extends StatelessWidget {
   final VoidCallback onTap;
   const _UserTile({required this.user, required this.onTap});
 
+  void _copyUserId(BuildContext context) {
+    Clipboard.setData(ClipboardData(text: user.userId));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+          content: Text('User ID copied to clipboard'),
+          duration: Duration(seconds: 2)),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final initial = (user.displayName.isNotEmpty ? user.displayName : user.userId)[0].toUpperCase();
+    final initial =
+        (user.displayName.isNotEmpty ? user.displayName : user.userId)[0].toUpperCase();
     final isCredit = user.pending < 0;
     return Card(
       child: ListTile(
@@ -236,11 +278,31 @@ class _UserTile extends StatelessWidget {
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         leading: CircleAvatar(
           backgroundColor: kBlue.withOpacity(0.1),
-          child: Text(initial, style: const TextStyle(color: kBlue, fontWeight: FontWeight.w700)),
+          child: Text(initial,
+              style: const TextStyle(
+                  color: kBlue,
+                  fontWeight: FontWeight.w700,
+                  fontFamily: 'monospace')),
         ),
-        title: Text(user.displayName, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-        subtitle: Text('ID: ${user.userId}',
-            style: const TextStyle(fontSize: 12, color: kSlate500, fontFamily: 'monospace')),
+        title: Text(user.displayName,
+            style: const TextStyle(
+                fontWeight: FontWeight.w600, fontSize: 14, fontFamily: 'monospace')),
+        subtitle: Row(
+          children: [
+            Expanded(
+              child: Text('ID: ${user.userId}',
+                  style: const TextStyle(
+                      fontSize: 12, color: kSlate500, fontFamily: 'monospace')),
+            ),
+            GestureDetector(
+              onTap: () => _copyUserId(context),
+              child: const Padding(
+                padding: EdgeInsets.only(right: 4),
+                child: Icon(Icons.copy, size: 13, color: kSlate400),
+              ),
+            ),
+          ],
+        ),
         trailing: Text(
           '৳${user.pending.toStringAsFixed(2)}',
           style: TextStyle(
@@ -261,7 +323,8 @@ class _SendAllDialog extends StatefulWidget {
   final List<UserSummary> users;
   final String date;
   final TelegramService telegram;
-  const _SendAllDialog({required this.users, required this.date, required this.telegram});
+  const _SendAllDialog(
+      {required this.users, required this.date, required this.telegram});
 
   @override
   State<_SendAllDialog> createState() => _SendAllDialogState();
@@ -341,7 +404,8 @@ class _SendAllDialogState extends State<_SendAllDialog> {
     final pct = total > 0 ? _done / total : 0.0;
     return AlertDialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      title: const Text('Sending to all users', style: TextStyle(fontWeight: FontWeight.w700)),
+      title: const Text('Sending to all users',
+          style: TextStyle(fontWeight: FontWeight.w700)),
       content: SizedBox(
         width: 360,
         child: Column(
@@ -352,15 +416,18 @@ class _SendAllDialogState extends State<_SendAllDialog> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('$_done / $total', style: const TextStyle(fontSize: 12, color: kSlate500)),
-                Text('${(pct * 100).round()}%', style: const TextStyle(fontSize: 12, color: kSlate500)),
+                Text('$_done / $total',
+                    style: const TextStyle(fontSize: 12, color: kSlate500)),
+                Text('${(pct * 100).round()}%',
+                    style: const TextStyle(fontSize: 12, color: kSlate500)),
               ],
             ),
             const SizedBox(height: 12),
             Container(
               height: 200,
               decoration: BoxDecoration(
-                  border: Border.all(color: kSlate200), borderRadius: BorderRadius.circular(8)),
+                  border: Border.all(color: kSlate200),
+                  borderRadius: BorderRadius.circular(8)),
               child: ListView.builder(
                 padding: const EdgeInsets.all(8),
                 itemCount: _logs.length,
@@ -374,7 +441,8 @@ class _SendAllDialogState extends State<_SendAllDialog> {
         if (_finished)
           ElevatedButton(
             onPressed: () => Navigator.pop(context),
-            child: Text('Done — $_sent sent, $_failed failed, $_blocked blocked'),
+            child:
+                Text('Done — $_sent sent, $_failed failed, $_blocked blocked'),
           ),
       ],
     );
@@ -409,7 +477,8 @@ class _LogRow extends StatelessWidget {
       child: Row(
         children: [
           Container(
-            width: 8, height: 8,
+            width: 8,
+            height: 8,
             decoration: BoxDecoration(color: _dot, shape: BoxShape.circle),
           ),
           const SizedBox(width: 8),

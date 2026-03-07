@@ -2,6 +2,7 @@
 
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:path_provider/path_provider.dart';
@@ -114,6 +115,13 @@ class _UserDetailScreenState extends State<UserDetailScreen> {
     }
   }
 
+  void _copyUserId() {
+    Clipboard.setData(ClipboardData(text: widget.userId));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('User ID copied to clipboard'), duration: Duration(seconds: 2)),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final initial = _displayName[0].toUpperCase();
@@ -143,9 +151,18 @@ class _UserDetailScreenState extends State<UserDetailScreen> {
                         width: 48, height: 48,
                         decoration: BoxDecoration(
                             color: kBlue, borderRadius: BorderRadius.circular(14)),
-                        child: Center(
+                        child: Align(
+                          alignment: Alignment.topLeft,
+                          child: Padding(
+                            padding: const EdgeInsets.only(left: 10, top: 8),
                             child: Text(initial,
-                                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 20))),
+                                style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 20,
+                                    fontFamily: 'monospace')),
+                          ),
+                        ),
                       ),
                       const SizedBox(width: 14),
                       Expanded(
@@ -153,22 +170,52 @@ class _UserDetailScreenState extends State<UserDetailScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(_displayName,
-                                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 17)),
-                            Text('ID: ${widget.userId}',
-                                style: const TextStyle(fontSize: 12, color: kSlate500, fontFamily: 'monospace')),
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 17,
+                                    fontFamily: 'monospace')),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text('ID: ${widget.userId}',
+                                      style: const TextStyle(
+                                          fontSize: 12,
+                                          color: kSlate500,
+                                          fontFamily: 'monospace')),
+                                ),
+                                GestureDetector(
+                                  onTap: _copyUserId,
+                                  child: const Icon(Icons.copy, size: 14, color: kSlate400),
+                                ),
+                              ],
+                            ),
                           ],
                         ),
                       ),
                       const Text('PAYTRACK',
-                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: kSlate400, letterSpacing: 1)),
+                          style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: kSlate400,
+                              letterSpacing: 1,
+                              fontFamily: 'monospace')),
                     ],
                   ),
                   const Divider(height: 28, color: kSlate100),
                   Text('PENDING BALANCE',
-                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: kSlate400, letterSpacing: 1)),
+                      style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: kSlate400,
+                          letterSpacing: 1,
+                          fontFamily: 'monospace')),
                   const SizedBox(height: 6),
                   Text('৳${_pending.toStringAsFixed(2)}',
-                      style: TextStyle(fontSize: 34, fontWeight: FontWeight.w700, color: balColor, fontFamily: 'monospace')),
+                      style: TextStyle(
+                          fontSize: 34,
+                          fontWeight: FontWeight.w700,
+                          color: balColor,
+                          fontFamily: 'monospace')),
                   const SizedBox(height: 12),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -186,12 +233,16 @@ class _UserDetailScreenState extends State<UserDetailScreen> {
                             const SizedBox(width: 6),
                             Text(isCredit ? 'Credit' : 'Pending',
                                 style: TextStyle(
-                                    fontSize: 12, fontWeight: FontWeight.w600,
-                                    color: isCredit ? const Color(0xFF065F46) : const Color(0xFF991B1B))),
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: isCredit ? const Color(0xFF065F46) : const Color(0xFF991B1B),
+                                    fontFamily: 'monospace')),
                           ],
                         ),
                       ),
-                      Text(_today, style: const TextStyle(fontSize: 12, color: kSlate400, fontFamily: 'monospace')),
+                      Text(_today,
+                          style: const TextStyle(
+                              fontSize: 12, color: kSlate400, fontFamily: 'monospace')),
                     ],
                   ),
                 ],
@@ -209,7 +260,10 @@ class _UserDetailScreenState extends State<UserDetailScreen> {
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
                   onPressed: _sending ? null : _sendTelegram,
                   icon: _sending
-                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                       : const Icon(Icons.send, size: 16),
                   label: Text(_sending ? 'Sending...' : 'Send via Bot'),
                 ),
@@ -239,7 +293,8 @@ class _UserDetailScreenState extends State<UserDetailScreen> {
                       Expanded(
                         child: TextField(
                           controller: _amountCtrl,
-                          keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
+                          keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true, signed: true),
                           decoration: const InputDecoration(
                             hintText: '0.00',
                             prefixText: '৳ ',
@@ -296,7 +351,10 @@ class _UserDetailScreenState extends State<UserDetailScreen> {
                       headingRowHeight: 38,
                       dataRowMinHeight: 44,
                       headingTextStyle: const TextStyle(
-                          fontSize: 11, fontWeight: FontWeight.w600, color: kSlate500, letterSpacing: 0.5),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: kSlate500,
+                          letterSpacing: 0.5),
                       columns: const [
                         DataColumn(label: Text('DATE')),
                         DataColumn(label: Text('OK'), numeric: true),
@@ -311,10 +369,13 @@ class _UserDetailScreenState extends State<UserDetailScreen> {
                               style: const TextStyle(fontSize: 12, fontFamily: 'monospace'))),
                           DataCell(Text('${e['ok_count']}',
                               style: const TextStyle(fontFamily: 'monospace'))),
-                          DataCell(Text('৳${(e['price_per_ok'] as double).toStringAsFixed(2)}',
-                              style: const TextStyle(fontSize: 12, fontFamily: 'monospace', color: kSlate500))),
+                          DataCell(Text(
+                              '৳${(e['price_per_ok'] as double).toStringAsFixed(2)}',
+                              style: const TextStyle(
+                                  fontSize: 12, fontFamily: 'monospace', color: kSlate500))),
                           DataCell(Text('৳${(e['total'] as double).toStringAsFixed(2)}',
-                              style: const TextStyle(fontWeight: FontWeight.w600, fontFamily: 'monospace'))),
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.w600, fontFamily: 'monospace'))),
                           DataCell(_pill(e['bkash'] as String, Colors.blue)),
                           DataCell(_pill(e['rocket'] as String, Colors.purple)),
                         ]);
@@ -336,8 +397,7 @@ class _UserDetailScreenState extends State<UserDetailScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-          color: color.withOpacity(0.08),
-          borderRadius: BorderRadius.circular(999)),
+          color: color.withOpacity(0.08), borderRadius: BorderRadius.circular(999)),
       child: Text(value,
           style: TextStyle(fontSize: 11, color: color, fontFamily: 'monospace')),
     );

@@ -51,26 +51,25 @@ class CardGenerator {
             const Rect.fromLTWH(P, P, AV, AV), const Radius.circular(AVR)),
         avatarPaint);
 
+    // Avatar initial — top-left aligned, positioned so it sits visually at the top of the avatar
     _drawText(canvas, initial,
-        x: P + AV / 2,
-        y: P + AV / 2,
+        x: P + 18,
+        y: P + 14,
         size: 42,
         weight: FontWeight.w700,
-        color: Colors.white,
-        align: TextAlign.center,
-        mono: true);
+        color: Colors.white);
 
-    // 3. Name
+    // 3. Name — mono font
     _drawText(canvas, displayName,
         x: P + AV + 28, y: P + 8, size: 32, weight: FontWeight.w700, color: const Color(0xFF0F172A));
 
-    // 4. User ID
+    // 4. User ID — mono font
     _drawText(canvas, 'ID: $userId',
-        x: P + AV + 28, y: P + 54, size: 22, weight: FontWeight.w400, color: const Color(0xFF64748B), mono: true);
+        x: P + AV + 28, y: P + 54, size: 22, weight: FontWeight.w400, color: const Color(0xFF64748B));
 
-    // 5. PAYTRACK watermark
+    // 5. PAYTRACK watermark — mono font
     _drawTextRight(canvas, 'PAYTRACK',
-        right: P, y: P + AV / 2 - 11, size: 20, weight: FontWeight.w700, color: const Color(0xFFCBD5E1), mono: true);
+        right: P, y: P + AV / 2 - 11, size: 20, weight: FontWeight.w700, color: const Color(0xFFCBD5E1));
 
     // 6. Divider
     final divY = P + AV + 36;
@@ -79,20 +78,20 @@ class CardGenerator {
       ..strokeWidth = 2;
     canvas.drawLine(Offset(P, divY), Offset(W - P, divY), divPaint);
 
-    // 7. Balance label
+    // 7. Balance label — mono font
     final lblY = divY + 30;
     _drawText(canvas, balLabel,
-        x: P, y: lblY, size: 20, weight: FontWeight.w600, color: const Color(0xFF94A3B8), mono: true);
+        x: P, y: lblY, size: 20, weight: FontWeight.w600, color: const Color(0xFF94A3B8));
 
-    // 8. Balance amount
+    // 8. Balance amount — mono font
     _drawText(canvas, '৳$absPend',
-        x: P, y: lblY + 34, size: 72, weight: FontWeight.w500, color: balColor, mono: true);
+        x: P, y: lblY + 34, size: 72, weight: FontWeight.w500, color: balColor);
 
     // 9. Status pill
     const pillH = 46.0;
     final pillY = H - P - pillH;
 
-    final tp = _makeTP('  $label  ', size: 22, weight: FontWeight.w600, mono: true);
+    final tp = _makeTP('  $label  ', size: 22, weight: FontWeight.w600);
     tp.layout();
     final pillW = tp.width + 50;
 
@@ -106,11 +105,11 @@ class CardGenerator {
     canvas.drawCircle(Offset(P + 22, pillY + pillH / 2), 7, dotPaint);
 
     _drawText(canvas, label,
-        x: P + 36, y: pillY + pillH / 2 - 12, size: 22, weight: FontWeight.w600, color: pillFg, mono: true);
+        x: P + 36, y: pillY + pillH / 2 - 12, size: 22, weight: FontWeight.w600, color: pillFg);
 
-    // 10. Date
+    // 10. Date — mono font
     _drawTextRight(canvas, date,
-        right: P, y: pillY + pillH / 2 - 11, size: 20, weight: FontWeight.w400, color: const Color(0xFF94A3B8), mono: true);
+        right: P, y: pillY + pillH / 2 - 11, size: 20, weight: FontWeight.w400, color: const Color(0xFF94A3B8));
 
     final picture = recorder.endRecording();
     final img = await picture.toImage(W.toInt(), H.toInt());
@@ -121,14 +120,13 @@ class CardGenerator {
   static TextPainter _makeTP(String text,
       {required double size,
       required FontWeight weight,
-      bool mono = false,
       Color color = Colors.black,
       TextAlign align = TextAlign.left}) {
     return TextPainter(
       text: TextSpan(
         text: text,
         style: TextStyle(
-          fontFamily: mono ? 'monospace' : null,
+          fontFamily: 'monospace', // Always mono
           fontSize: size,
           fontWeight: weight,
           color: color,
@@ -145,9 +143,8 @@ class CardGenerator {
       required double size,
       required FontWeight weight,
       required Color color,
-      bool mono = false,
       TextAlign align = TextAlign.left}) {
-    final tp = _makeTP(text, size: size, weight: weight, color: color, mono: mono, align: align);
+    final tp = _makeTP(text, size: size, weight: weight, color: color, align: align);
     tp.layout(maxWidth: 800);
     final dx = align == TextAlign.center ? x - tp.width / 2 : x;
     tp.paint(canvas, Offset(dx, y));
@@ -158,9 +155,8 @@ class CardGenerator {
       required double y,
       required double size,
       required FontWeight weight,
-      required Color color,
-      bool mono = false}) {
-    final tp = _makeTP(text, size: size, weight: weight, color: color, mono: mono);
+      required Color color}) {
+    final tp = _makeTP(text, size: size, weight: weight, color: color);
     tp.layout(maxWidth: 600);
     tp.paint(canvas, Offset(960 - right - tp.width, y));
   }
