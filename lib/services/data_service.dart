@@ -36,7 +36,7 @@ class DataService {
     final rows = <CsvEntry>[];
     try {
       final content = file.readAsStringSync();
-      final lines = const CsvToListConverter().convert(content, eol: '\n');
+      final lines = CsvToListConverter().convert(content, eol: '\n');
 
       if (lines.isEmpty) return rows;
 
