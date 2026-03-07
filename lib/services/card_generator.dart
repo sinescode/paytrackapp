@@ -253,10 +253,10 @@ class CardGenerator {
     String absPend,
     String date,
   ) {
-    const double panelX = W * 0.62;
-    const double panelW = W - panelX - 32;
+    final double panelX = W * 0.62;
+    final double panelW = W - panelX - 32;
     const double panelY = 48.0;
-    const double panelH = H - 96.0;
+    final double panelH = H - 96.0;
 
     // Panel surface
     canvas.drawRRect(
