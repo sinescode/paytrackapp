@@ -1,12 +1,16 @@
 // lib/services/card_generator.dart
 
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'dart:typed_data';
-import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 class CardGenerator {
   static final Map<String, Uint8List> _cache = {};
+
+  // Card dimensions — 2:1 golden ratio landscape
+  static const double W = 960.0;
+  static const double H = 480.0;
 
   static Future<Uint8List> generate({
     required String userId,
@@ -17,298 +21,340 @@ class CardGenerator {
     final cacheKey = '$userId-$pending-$date';
     if (_cache.containsKey(cacheKey)) return _cache[cacheKey]!;
 
-    // Card dimensions (16:9 ratio, 2x for retina)
-    const double W = 960.0;
-    const double H = 540.0;
-    const double P = 48.0; // Base padding unit
-
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder, const Rect.fromLTWH(0, 0, W, H));
 
     final isCredit = pending < 0;
-    final absPending = pending.abs();
+    final absPend = pending.abs().toStringAsFixed(2);
+    final initial = (displayName.isNotEmpty ? displayName : userId)[0].toUpperCase();
 
-    // Modern color palette
-    final Color primaryBg = const Color(0xFF0F172A); // Slate 900
-    final Color accentColor = isCredit ? const Color(0xFF10B981) : const Color(0xFFF43F5E);
-    final Color accentGlow = isCredit ? const Color(0xFF059669) : const Color(0xFFE11D48);
-    final Color textPrimary = Colors.white;
-    final Color textSecondary = const Color(0xFF94A3B8);
-    final Color surfaceLight = const Color(0xFF1E293B);
-    
-    // 1. Background with subtle gradient
-    final bgRect = RRect.fromRectAndRadius(
-      const Rect.fromLTWH(0, 0, W, H),
-      const Radius.circular(24),
-    );
-    
-    // Base dark background
-    final bgPaint = Paint()..color = primaryBg;
-    canvas.drawRRect(bgRect, bgPaint);
+    // ── Palette ──────────────────────────────────────────────────────────────
+    const bgDark       = Color(0xFF0A0F1E); // deep navy
+    const bgCard       = Color(0xFF111827); // card surface
+    const accentCredit = Color(0xFF00F5A0); // neon mint
+    const accentDebit  = Color(0xFFFF4D6D); // coral red
+    const surfaceLight = Color(0xFF1E2A3A); // raised panel
+    const textPrimary  = Color(0xFFF1F5F9);
+    const textMuted    = Color(0xFF64748B);
+    const divider      = Color(0xFF1E293B);
 
-    // Subtle radial gradient overlay
-    final gradientPaint = Paint()
-      ..shader = ui.Gradient.radial(
-        const Offset(W * 0.8, H * 0.2),
-        W * 0.6,
-        [
-          accentColor.withOpacity(0.08),
-          accentColor.withOpacity(0.0),
-        ],
-      );
-    canvas.drawRRect(bgRect, gradientPaint);
+    final accent     = isCredit ? accentCredit : accentDebit;
+    final accentDim  = isCredit
+        ? const Color(0xFF00F5A0).withOpacity(0.12)
+        : const Color(0xFFFF4D6D).withOpacity(0.12);
+    final accentMid  = isCredit
+        ? const Color(0xFF00F5A0).withOpacity(0.6)
+        : const Color(0xFFFF4D6D).withOpacity(0.6);
+    final statusLabel = isCredit ? 'CREDIT' : 'DEBIT';
 
-    // 2. Top accent line
-    final linePaint = Paint()
+    // ── 1. Base card (rounded rect, dark) ────────────────────────────────────
+    final cardRRect = RRect.fromRectAndRadius(
+        const Rect.fromLTWH(0, 0, W, H), const Radius.circular(32));
+    canvas.drawRRect(cardRRect, Paint()..color = bgCard);
+
+    // Subtle inner background gradient via two overlapping rects
+    final gradPaint = Paint()
       ..shader = ui.Gradient.linear(
         const Offset(0, 0),
-        const Offset(W, 0),
-        [accentColor.withOpacity(0.0), accentColor, accentColor.withOpacity(0.0)],
-      )
-      ..strokeWidth = 2;
-    canvas.drawLine(
-      const Offset(P, 2),
-      Offset(W - P, 2),
-      linePaint,
-    );
-
-    // 3. Avatar with glow effect
-    const double avatarSize = 72.0;
-    const double avatarX = P;
-    const double avatarY = P;
-
-    // Glow behind avatar
-    final glowPaint = Paint()
-      ..color = accentColor.withOpacity(0.3)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 20);
-    canvas.drawCircle(
-      Offset(avatarX + avatarSize / 2, avatarY + avatarSize / 2),
-      avatarSize / 2 + 8,
-      glowPaint,
-    );
-
-    // Avatar circle
-    final avatarPaint = Paint()
-      ..shader = ui.Gradient.linear(
-        Offset(avatarX, avatarY),
-        Offset(avatarX + avatarSize, avatarY + avatarSize),
-        [surfaceLight, primaryBg],
+        const Offset(W, H),
+        [bgDark, const Color(0xFF0D1B2A)],
       );
-    canvas.drawCircle(
-      Offset(avatarX + avatarSize / 2, avatarY + avatarSize / 2),
-      avatarSize / 2,
-      avatarPaint,
+    canvas.drawRRect(cardRRect, gradPaint);
+
+    // ── 2. Glowing orb — top-left accent ─────────────────────────────────────
+    final orbPaint = Paint()
+      ..shader = ui.Gradient.radial(
+        const Offset(120, 100),
+        220,
+        [accent.withOpacity(0.18), Colors.transparent],
+      );
+    canvas.drawRRect(cardRRect, orbPaint);
+
+    // ── 3. Geometric grid lines (subtle) ─────────────────────────────────────
+    _drawGrid(canvas, W, H);
+
+    // ── 4. Thin accent border ─────────────────────────────────────────────────
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+          const Rect.fromLTWH(0.75, 0.75, W - 1.5, H - 1.5),
+          const Radius.circular(31.5)),
+      Paint()
+        ..color = accent.withOpacity(0.25)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5,
     );
 
-    // Avatar border
-    final avatarBorderPaint = Paint()
-      ..color = accentColor.withOpacity(0.5)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2;
-    canvas.drawCircle(
-      Offset(avatarX + avatarSize / 2, avatarY + avatarSize / 2),
-      avatarSize / 2,
-      avatarBorderPaint,
-    );
+    // ── 5. Top accent stripe ──────────────────────────────────────────────────
+    final stripePath = Path()
+      ..moveTo(0, 0)
+      ..lineTo(W * 0.55, 0)
+      ..lineTo(W * 0.45, 4)
+      ..lineTo(0, 4)
+      ..close();
+    canvas.drawPath(stripePath, Paint()..color = accent);
 
+    // ── 6. Avatar ─────────────────────────────────────────────────────────────
+    const double avX = 48.0;
+    const double avY = 48.0;
+    const double avS = 80.0;
+    const double avR = 16.0;
+
+    // Avatar glow
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+          Rect.fromLTWH(avX - 4, avY - 4, avS + 8, avS + 8),
+          const Radius.circular(avR + 4)),
+      Paint()
+        ..color = accent.withOpacity(0.20)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12),
+    );
+    // Avatar background
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+          Rect.fromLTWH(avX, avY, avS, avS), const Radius.circular(avR)),
+      Paint()
+        ..shader = ui.Gradient.linear(
+          Offset(avX, avY),
+          Offset(avX + avS, avY + avS),
+          [accent.withOpacity(0.9), accent.withOpacity(0.4)],
+        ),
+    );
     // Initial
-    final initial = (displayName.isNotEmpty ? displayName : userId)[0].toUpperCase();
-    _drawText(
-      canvas,
-      initial,
-      x: avatarX + avatarSize / 2,
-      y: avatarY + avatarSize / 2 - 24,
-      size: 32,
-      weight: FontWeight.w700,
-      color: textPrimary,
-      align: TextAlign.center,
-    );
+    _drawText(canvas, initial,
+        x: avX + avS / 2,
+        y: avY + avS / 2 - 23,
+        size: 36,
+        weight: FontWeight.w800,
+        color: bgDark,
+        align: TextAlign.center);
 
-    // 4. User info column
-    const double infoX = avatarX + avatarSize + 20;
-    const double infoY = avatarY + 8;
+    // ── 7. Name & ID ──────────────────────────────────────────────────────────
+    const double nameX = avX + avS + 24.0;
+    _drawText(canvas, displayName,
+        x: nameX, y: avY + 4, size: 26, weight: FontWeight.w700, color: textPrimary);
+    _drawText(canvas, userId.toUpperCase(),
+        x: nameX,
+        y: avY + 40,
+        size: 13,
+        weight: FontWeight.w500,
+        color: textMuted,
+        letterSpacing: 2.2);
 
-    // Name
-    _drawText(
-      canvas,
-      displayName,
-      x: infoX,
-      y: infoY,
-      size: 28,
-      weight: FontWeight.w600,
-      color: textPrimary,
-    );
+    // ── 8. PAYTRACK logo (top-right) ──────────────────────────────────────────
+    _drawTextRight(canvas, 'PAYTRACK',
+        right: 48, y: avY + 28, size: 13, weight: FontWeight.w700, color: accent.withOpacity(0.55), letterSpacing: 3.5);
 
-    // User ID with subtle background pill
-    final idText = 'ID: ${userId.length > 12 ? '${userId.substring(0, 12)}...' : userId}';
-    final idPainter = _makeTP(idText, size: 14, weight: FontWeight.w500, color: textSecondary);
-    idPainter.layout();
-    
-    final idPillRect = RRect.fromRectAndRadius(
-      Rect.fromLTWH(infoX - 8, infoY + 36, idPainter.width + 16, 28),
-      const Radius.circular(6),
-    );
-    final idPillPaint = Paint()..color = surfaceLight.withOpacity(0.5);
-    canvas.drawRRect(idPillRect, idPillPaint);
-    
-    _drawText(
-      canvas,
-      idText,
-      x: infoX,
-      y: infoY + 40,
-      size: 14,
-      weight: FontWeight.w500,
-      color: textSecondary,
-    );
-
-    // 5. Brand mark (top right)
-    _drawTextRight(
-      canvas,
-      'PAYTRACK',
-      right: P,
-      y: P + 20,
-      size: 14,
-      weight: FontWeight.w800,
-      color: textSecondary.withOpacity(0.6),
-      letterSpacing: 2,
-    );
-
-    // 6. Decorative geometric elements
-    final geoPaint = Paint()
-      ..color = accentColor.withOpacity(0.1)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1;
-    
-    // Concentric circles in background
-    for (int i = 1; i <= 3; i++) {
-      canvas.drawCircle(
-        Offset(W - P - 60, H - P - 100),
-        40.0 * i,
-        geoPaint,
-      );
-    }
-
-    // 7. Main balance section
-    const double balanceY = H * 0.55;
-    
-    // Balance label
-    _drawText(
-      canvas,
-      isCredit ? 'CREDIT BALANCE' : 'PENDING BALANCE',
-      x: P,
-      y: balanceY,
-      size: 12,
-      weight: FontWeight.w600,
-      color: textSecondary,
-      letterSpacing: 1.5,
-    );
-
-    // Balance amount with large typography
-    final balanceText = '৳${absPending.toStringAsFixed(2)}';
-    _drawText(
-      canvas,
-      balanceText,
-      x: P,
-      y: balanceY + 28,
-      size: 64,
-      weight: FontWeight.w300,
-      color: textPrimary,
-    );
-
-    // Accent underline for balance
-    final underlinePaint = Paint()
-      ..shader = ui.Gradient.linear(
-        Offset(P, 0),
-        Offset(P + 200, 0),
-        [accentColor, accentColor.withOpacity(0.0)],
-      )
-      ..strokeWidth = 3
-      ..strokeCap = StrokeCap.round;
+    // ── 9. Horizontal divider ─────────────────────────────────────────────────
+    const double divY = 168.0;
     canvas.drawLine(
-      Offset(P, balanceY + 100),
-      Offset(P + 180, balanceY + 100),
-      underlinePaint,
+      const Offset(48, divY),
+      const Offset(W - 48, divY),
+      Paint()
+        ..color = divider
+        ..strokeWidth = 1,
     );
 
-    // 8. Status indicator (bottom left)
-    const double statusY = H - P - 32;
-    const double dotSize = 8.0;
-    
-    // Pulsing dot effect (static representation)
-    final dotPaint = Paint()..color = accentColor;
+    // ── 10. Balance section ───────────────────────────────────────────────────
+    const double balLabelY = divY + 28.0;
+    const double balAmtY   = balLabelY + 24.0;
+
+    _drawText(canvas, isCredit ? 'CREDIT BALANCE' : 'PENDING BALANCE',
+        x: 48,
+        y: balLabelY,
+        size: 11,
+        weight: FontWeight.w600,
+        color: textMuted,
+        letterSpacing: 2.8);
+
+    // Large amount — split currency symbol from number for styling
+    _drawText(canvas, '৳',
+        x: 48, y: balAmtY + 8, size: 32, weight: FontWeight.w400, color: accent.withOpacity(0.7));
+    _drawText(canvas, absPend,
+        x: 88, y: balAmtY, size: 72, weight: FontWeight.w700, color: accent);
+
+    // ── 11. Pill: status ──────────────────────────────────────────────────────
+    const double pillH   = 40.0;
+    const double pillY   = H - 52.0;
+    const double dotR    = 5.0;
+    const double dotPadL = 16.0;
+    const double textPadL = dotPadL + dotR * 2 + 10.0;
+    const double pillPadR = 20.0;
+
+    final pillLabelTP = _makeTP(statusLabel,
+        size: 12, weight: FontWeight.w700, color: accent, letterSpacing: 2.0);
+    pillLabelTP.layout();
+    final pillW = textPadL + pillLabelTP.width + pillPadR;
+
+    // Pill bg
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+          Rect.fromLTWH(48, pillY, pillW, pillH), const Radius.circular(20)),
+      Paint()..color = accentDim,
+    );
+    // Pill border
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+          Rect.fromLTWH(48, pillY, pillW, pillH), const Radius.circular(20)),
+      Paint()
+        ..color = accent.withOpacity(0.35)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1,
+    );
+    // Dot
     canvas.drawCircle(
-      Offset(P + dotSize / 2, statusY + 10),
-      dotSize / 2,
-      dotPaint,
+      Offset(48 + dotPadL + dotR, pillY + pillH / 2),
+      dotR,
+      Paint()..color = accent,
     );
-    
-    // Status ring
-    final ringPaint = Paint()
-      ..color = accentColor.withOpacity(0.4)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2;
+    // Dot glow
     canvas.drawCircle(
-      Offset(P + dotSize / 2, statusY + 10),
-      dotSize,
-      ringPaint,
+      Offset(48 + dotPadL + dotR, pillY + pillH / 2),
+      dotR + 3,
+      Paint()
+        ..color = accent.withOpacity(0.3)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
     );
+    // Label
+    _drawText(canvas, statusLabel,
+        x: 48 + textPadL,
+        y: pillY + (pillH / 2) - 9,
+        size: 12,
+        weight: FontWeight.w700,
+        color: accent,
+        letterSpacing: 2.0);
 
-    // Status text
-    _drawText(
-      canvas,
-      isCredit ? 'Credit Available' : 'Payment Due',
-      x: P + 24,
-      y: statusY,
-      size: 16,
-      weight: FontWeight.w600,
-      color: accentColor,
-    );
+    // ── 12. Date (bottom-right) ───────────────────────────────────────────────
+    _drawTextRight(canvas, date,
+        right: 48, y: pillY + pillH / 2 - 8, size: 13, weight: FontWeight.w400, color: textMuted, letterSpacing: 0.5);
 
-    // 9. Date (bottom right)
-    _drawTextRight(
-      canvas,
-      date,
-      right: P,
-      y: statusY,
-      size: 14,
-      weight: FontWeight.w400,
-      color: textSecondary,
-    );
+    // ── 13. Right-side decorative panel ──────────────────────────────────────
+    _drawRightPanel(canvas, W, H, accent, accentDim, surfaceLight, isCredit, absPend, date);
 
-    // 10. Subtle noise texture overlay (optional visual depth)
-    final noisePaint = Paint()
-      ..color = Colors.white.withOpacity(0.02)
-      ..blendMode = BlendMode.overlay;
-    // Simulated noise with random dots would go here, skipped for performance
+    // ── Clip everything to card bounds ────────────────────────────────────────
+    // (already constrained by recorder rect)
 
-    // 11. Corner accents
-    final cornerPaint = Paint()
-      ..color = accentColor.withOpacity(0.3)
-      ..strokeWidth = 2;
-    
-    // Top-left corner detail
-    canvas.drawLine(const Offset(P, P + 20), const Offset(P, P), cornerPaint);
-    canvas.drawLine(const Offset(P, P), const Offset(P + 20, P), cornerPaint);
-    
-    // Bottom-right corner detail
-    canvas.drawLine(Offset(W - P, H - P - 20), Offset(W - P, H - P), cornerPaint);
-    canvas.drawLine(Offset(W - P, H - P), Offset(W - P - 20, H - P), cornerPaint);
-
-    // Finalize
     final picture = recorder.endRecording();
     final img = await picture.toImage(W.toInt(), H.toInt());
     final byteData = await img.toByteData(format: ui.ImageByteFormat.png);
     final bytes = byteData!.buffer.asUint8List();
-
     _cache[cacheKey] = bytes;
     return bytes;
   }
 
+  // ── Decorative right panel with stat boxes ──────────────────────────────────
+  static void _drawRightPanel(
+    Canvas canvas,
+    double W,
+    double H,
+    Color accent,
+    Color accentDim,
+    Color surfaceLight,
+    bool isCredit,
+    String absPend,
+    String date,
+  ) {
+    const double panelX = W * 0.62;
+    const double panelW = W - panelX - 32;
+    const double panelY = 48.0;
+    const double panelH = H - 96.0;
+
+    // Panel surface
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+          Rect.fromLTWH(panelX, panelY, panelW, panelH),
+          const Radius.circular(20)),
+      Paint()..color = surfaceLight,
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+          Rect.fromLTWH(panelX, panelY, panelW, panelH),
+          const Radius.circular(20)),
+      Paint()
+        ..color = accent.withOpacity(0.08)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1,
+    );
+
+    // Mini bar chart decoration
+    _drawMiniChart(canvas, panelX + 16, panelY + 16, panelW - 32, 80, accent, isCredit);
+
+    // Stat rows
+    final rows = [
+      ('DATE', date),
+      ('TYPE', isCredit ? 'Credit' : 'Debit'),
+      ('AMOUNT', '৳$absPend'),
+    ];
+
+    double rowY = panelY + 112;
+    for (final row in rows) {
+      _drawText(canvas, row.$1,
+          x: panelX + 16,
+          y: rowY,
+          size: 10,
+          weight: FontWeight.w600,
+          color: const Color(0xFF475569),
+          letterSpacing: 1.8);
+      _drawText(canvas, row.$2,
+          x: panelX + 16,
+          y: rowY + 16,
+          size: 15,
+          weight: FontWeight.w600,
+          color: const Color(0xFFCBD5E1));
+      rowY += 58;
+
+      if (rowY < panelY + panelH - 30) {
+        canvas.drawLine(
+          Offset(panelX + 16, rowY - 12),
+          Offset(panelX + panelW - 16, rowY - 12),
+          Paint()
+            ..color = const Color(0xFF1E293B)
+            ..strokeWidth = 1,
+        );
+      }
+    }
+  }
+
+  // ── Mini decorative bar chart ─────────────────────────────────────────────
+  static void _drawMiniChart(Canvas canvas, double x, double y, double w, double h,
+      Color accent, bool isCredit) {
+    final bars = [0.4, 0.65, 0.5, 0.8, 0.55, 0.9, 0.7, 0.85];
+    final barW = (w - (bars.length - 1) * 4) / bars.length;
+
+    for (int i = 0; i < bars.length; i++) {
+      final bx = x + i * (barW + 4);
+      final bh = bars[i] * h;
+      final by = y + h - bh;
+      final isLast = i == bars.length - 1;
+
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+            Rect.fromLTWH(bx, by, barW, bh), const Radius.circular(4)),
+        Paint()
+          ..color = isLast ? accent : accent.withOpacity(0.25),
+      );
+    }
+  }
+
+  // ── Subtle background grid ────────────────────────────────────────────────
+  static void _drawGrid(Canvas canvas, double W, double H) {
+    final p = Paint()
+      ..color = const Color(0xFF1E293B).withOpacity(0.5)
+      ..strokeWidth = 0.5;
+    const spacing = 48.0;
+    for (double gx = spacing; gx < W; gx += spacing) {
+      canvas.drawLine(Offset(gx, 0), Offset(gx, H), p);
+    }
+    for (double gy = spacing; gy < H; gy += spacing) {
+      canvas.drawLine(Offset(0, gy), Offset(W, gy), p);
+    }
+  }
+
+  // ── Text helpers ──────────────────────────────────────────────────────────
   static TextPainter _makeTP(
     String text, {
     required double size,
     required FontWeight weight,
-    Color color = Colors.black,
+    Color color = Colors.white,
     TextAlign align = TextAlign.left,
     double letterSpacing = 0,
   }) {
@@ -316,12 +362,11 @@ class CardGenerator {
       text: TextSpan(
         text: text,
         style: TextStyle(
-          fontFamily: 'Inter',
+          fontFamily: 'monospace',
           fontSize: size,
           fontWeight: weight,
           color: color,
           letterSpacing: letterSpacing,
-          height: 1.2,
         ),
       ),
       textAlign: align,
@@ -340,24 +385,11 @@ class CardGenerator {
     TextAlign align = TextAlign.left,
     double letterSpacing = 0,
   }) {
-    final tp = _makeTP(
-      text,
-      size: size,
-      weight: weight,
-      color: color,
-      align: align,
-      letterSpacing: letterSpacing,
-    );
-    tp.layout(maxWidth: 800);
-    
-    final double dx = align == TextAlign.center 
-        ? x - tp.width / 2 
-        : align == TextAlign.right 
-            ? x - tp.width 
-            : x;
-    final double dy = y;
-    
-    tp.paint(canvas, Offset(dx, dy));
+    final tp = _makeTP(text,
+        size: size, weight: weight, color: color, align: align, letterSpacing: letterSpacing);
+    tp.layout(maxWidth: 560);
+    final dx = align == TextAlign.center ? x - tp.width / 2 : x;
+    tp.paint(canvas, Offset(dx, y));
   }
 
   static void _drawTextRight(
@@ -370,15 +402,10 @@ class CardGenerator {
     required Color color,
     double letterSpacing = 0,
   }) {
-    final tp = _makeTP(
-      text,
-      size: size,
-      weight: weight,
-      color: color,
-      letterSpacing: letterSpacing,
-    );
-    tp.layout(maxWidth: 600);
-    tp.paint(canvas, Offset(960 - right - tp.width, y));
+    final tp = _makeTP(text,
+        size: size, weight: weight, color: color, letterSpacing: letterSpacing);
+    tp.layout(maxWidth: 400);
+    tp.paint(canvas, Offset(W - right - tp.width, y));
   }
 
   static void clearCache() => _cache.clear();
