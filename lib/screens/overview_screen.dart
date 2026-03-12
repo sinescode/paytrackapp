@@ -335,6 +335,14 @@ class _SendAllDialog extends StatefulWidget {
 
 class _SendAllDialogState extends State<_SendAllDialog> {
   final List<_LogEntry> _logs = [];
+
+  // Track which users failed so we can re-queue them for retry.
+  // Key: userId, Value: the UserSummary (needed to re-send).
+  final Map<String, UserSummary> _failedUsers = {};
+
+  // Cache of pre-generated cards so retry doesn't regenerate them.
+  final Map<String, Uint8List> _cardCache = {};
+
   int _sent = 0;
   int _failed = 0;
   int _blocked = 0;
@@ -344,31 +352,33 @@ class _SendAllDialogState extends State<_SendAllDialog> {
   bool _preparing = true;
   String _status = 'Preparing cards...';
 
+  // Retry attempt counter shown in title (0 = initial run)
+  int _retryRound = 0;
+
   // Process 5 concurrent sends (respects Telegram rate limits)
   static const int _concurrency = 5;
 
   @override
   void initState() {
     super.initState();
-    _runOptimized();
+    _runOptimized(widget.users);
   }
 
-  Future<void> _runOptimized() async {
+  // ── Main send pipeline ────────────────────────────────────────────────────
+
+  Future<void> _runOptimized(List<UserSummary> users) async {
     try {
-      // PHASE 1: Pre-generate ALL cards in parallel (CPU-bound)
-      setState(() {
-        _preparing = true;
-        _status = 'Generating ${widget.users.length} cards...';
-      });
+      // PHASE 1: Pre-generate cards for users not already cached
+      final uncached = users.where((u) => !_cardCache.containsKey(u.userId)).toList();
 
-      final cardFutures = widget.users.map((user) => _generateCard(user)).toList();
-      final cards = await Future.wait(cardFutures);
+      if (uncached.isNotEmpty) {
+        setState(() {
+          _preparing = true;
+          _status = 'Generating ${uncached.length} cards...';
+        });
 
-      final userCards = <String, Uint8List>{};
-      for (int i = 0; i < widget.users.length; i++) {
-        if (cards[i] != null) {
-          userCards[widget.users[i].userId] = cards[i]!;
-        }
+        final cardFutures = uncached.map(_generateCard).toList();
+        await Future.wait(cardFutures);
       }
 
       if (_cancelled) return;
@@ -379,15 +389,14 @@ class _SendAllDialogState extends State<_SendAllDialog> {
       });
 
       // PHASE 2: Send in parallel batches (I/O-bound)
-      final queue = widget.users.where((u) => userCards.containsKey(u.userId)).toList();
-      
+      final queue = users.where((u) => _cardCache.containsKey(u.userId)).toList();
+
       while (queue.isNotEmpty && !_cancelled) {
         final batch = queue.take(_concurrency).toList();
         queue.removeRange(0, batch.length);
 
-        // Process batch concurrently
         await Future.wait(
-          batch.map((user) => _sendToUser(user, userCards[user.userId]!)),
+          batch.map((user) => _sendToUser(user, _cardCache[user.userId]!)),
           eagerError: false,
         );
       }
@@ -401,21 +410,36 @@ class _SendAllDialogState extends State<_SendAllDialog> {
     }
   }
 
-  Future<Uint8List?> _generateCard(UserSummary user) async {
+  // ── Card generation ───────────────────────────────────────────────────────
+
+  Future<void> _generateCard(UserSummary user) async {
     try {
-      return await CardGenerator.generate(
+      final bytes = await CardGenerator.generate(
         userId: user.userId,
         displayName: user.displayName,
         pending: user.pending,
         date: widget.date,
       );
+      if (bytes != null) {
+        _cardCache[user.userId] = bytes;
+      } else {
+        _markCardFailed(user);
+      }
     } catch (e) {
-      _addLog(user.userId, user.displayName, 'err', 'Card generation failed');
-      _failed++;
-      _done++;
-      return null;
+      _markCardFailed(user);
     }
   }
+
+  void _markCardFailed(UserSummary user) {
+    _addLog(user.userId, user.displayName, 'err', 'Card generation failed');
+    setState(() {
+      _failedUsers[user.userId] = user;
+      _failed++;
+      _done++;
+    });
+  }
+
+  // ── Per-user send ─────────────────────────────────────────────────────────
 
   Future<void> _sendToUser(UserSummary user, Uint8List bytes) async {
     if (_cancelled) return;
@@ -431,22 +455,65 @@ class _SendAllDialogState extends State<_SendAllDialog> {
       );
 
       if (result.ok) {
-        _sent++;
         _updateLog(user.userId, 'ok', 'sent ✓');
+        setState(() {
+          _sent++;
+          _failedUsers.remove(user.userId); // clear any prior failure entry
+        });
       } else if (result.blocked) {
-        _blocked++;
         _updateLog(user.userId, 'blocked', 'blocked by user');
+        setState(() {
+          _blocked++;
+          _failedUsers.remove(user.userId); // blocked ≠ retryable
+        });
       } else {
-        _failed++;
         _updateLog(user.userId, 'err', result.error ?? 'failed');
+        setState(() {
+          _failed++;
+          _failedUsers[user.userId] = user; // remember for retry
+        });
       }
     } catch (e) {
-      _failed++;
       _updateLog(user.userId, 'err', e.toString());
+      setState(() {
+        _failed++;
+        _failedUsers[user.userId] = user;
+      });
     }
 
     setState(() => _done++);
   }
+
+  // ── Retry failed users ────────────────────────────────────────────────────
+
+  Future<void> _retryFailed() async {
+    final toRetry = _failedUsers.values.toList();
+    if (toRetry.isEmpty) return;
+
+    setState(() {
+      _retryRound++;
+      _finished = false;
+      _cancelled = false;
+      _preparing = false;
+      _status = 'Retrying ${toRetry.length} failed users...';
+
+      // Reset counters: subtract the failures we're about to retry.
+      // Successes and blocked stay unchanged.
+      _failed = 0;
+      _done -= toRetry.length;
+      _failedUsers.clear();
+
+      // Mark all retried users as pending in the log
+      for (final user in toRetry) {
+        _updateLog(user.userId, 'pending', 'retrying...');
+      }
+    });
+
+    // Cards are already cached — skip generation phase
+    await _runOptimized(toRetry);
+  }
+
+  // ── Log helpers ───────────────────────────────────────────────────────────
 
   void _addLog(String id, String name, String status, String msg) {
     setState(() => _logs.add(_LogEntry(id: id, name: name, status: status, msg: msg)));
@@ -463,18 +530,24 @@ class _SendAllDialogState extends State<_SendAllDialog> {
     });
   }
 
+  // ── Build ─────────────────────────────────────────────────────────────────
+
   @override
   Widget build(BuildContext context) {
     final total = widget.users.length;
-    final pct = total > 0 ? _done / total : 0.0;
+    // Progress denominator: all users on first run; only retried on retry rounds.
+    final denominator = _retryRound == 0 ? total : (_done + _failedUsers.length + _sent + _blocked);
+    final pct = denominator > 0 ? (_done / denominator).clamp(0.0, 1.0) : 0.0;
+
+    final titleSuffix = _retryRound > 0 ? ' — Retry #$_retryRound' : '';
 
     return AlertDialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       title: Row(
         children: [
-          const Expanded(
-            child: Text('Send to All Users',
-                style: TextStyle(fontWeight: FontWeight.w700)),
+          Expanded(
+            child: Text('Send to All Users$titleSuffix',
+                style: const TextStyle(fontWeight: FontWeight.w700)),
           ),
           if (!_finished)
             IconButton(
@@ -542,11 +615,26 @@ class _SendAllDialogState extends State<_SendAllDialog> {
         ),
       ),
       actions: [
-        if (_finished)
+        if (_finished) ...[
+          // ── Retry Failed button — only shown when there are failures ──
+          if (_failed > 0)
+            OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: kRed,
+                side: const BorderSide(color: kRed),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
+              ),
+              onPressed: _retryFailed,
+              icon: const Icon(Icons.refresh, size: 15),
+              label: Text('Retry $_failed failed'),
+            ),
+          // ── Done button ──
           ElevatedButton(
             onPressed: () => Navigator.pop(context),
             child: Text('Done — $_sent sent, $_failed failed, $_blocked blocked'),
           ),
+        ],
       ],
     );
   }
