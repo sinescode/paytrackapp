@@ -3,7 +3,6 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:path_provider/path_provider.dart';
 import '../models/tier_model.dart';
 
 const _kConfigKey = 'paytrack_config';
@@ -46,6 +45,7 @@ class StorageService {
 
   Future<void> saveConfig(AppConfig config) async {
     await _prefs.setString(_kConfigKey, jsonEncode(config.toJson()));
+    await _autoExport();
   }
 
   // ── Balances ────────────────────────────────────────────────────────────
@@ -63,12 +63,13 @@ class StorageService {
 
   Future<void> saveBalances(Map<String, double> balances) async {
     await _prefs.setString(_kBalancesKey, jsonEncode(balances));
+    await _autoExport();
   }
 
   Future<void> updateBalance(String userId, double amount) async {
     final balances = loadBalances();
     balances[userId] = (balances[userId] ?? 0.0) + amount;
-    await saveBalances(balances);
+    await saveBalances(balances); // saveBalances already auto-exports
   }
 
   // ── CSV files ────────────────────────────────────────────────────────────
@@ -82,6 +83,16 @@ class StorageService {
         .where((f) => f.path.endsWith('.csv'))
         .toList()
       ..sort((a, b) => a.path.compareTo(b.path));
+  }
+
+  // ── Internal auto-export (silent, no return value) ───────────────────────
+
+  Future<void> _autoExport() async {
+    try {
+      await exportConfig();
+    } catch (_) {
+      // Never crash the caller on export failure
+    }
   }
 
   // ── Export config to /storage/0/Paytrackapp/Config/Config.json ──────────
@@ -108,12 +119,12 @@ class StorageService {
       final data = jsonDecode(raw) as Map<String, dynamic>;
       if (data.containsKey('config')) {
         final cfg = AppConfig.fromJson(data['config'] as Map<String, dynamic>);
-        await saveConfig(cfg);
+        await _prefs.setString(_kConfigKey, jsonEncode(cfg.toJson()));
       }
       if (data.containsKey('balances')) {
         final bal = (data['balances'] as Map<String, dynamic>)
             .map((k, v) => MapEntry(k, (v as num).toDouble()));
-        await saveBalances(bal);
+        await _prefs.setString(_kBalancesKey, jsonEncode(bal));
       }
       return true;
     } catch (_) {
@@ -130,12 +141,12 @@ class StorageService {
       final data = jsonDecode(raw) as Map<String, dynamic>;
       if (data.containsKey('config')) {
         final cfg = AppConfig.fromJson(data['config'] as Map<String, dynamic>);
-        await saveConfig(cfg);
+        await _prefs.setString(_kConfigKey, jsonEncode(cfg.toJson()));
       }
       if (data.containsKey('balances')) {
         final bal = (data['balances'] as Map<String, dynamic>)
             .map((k, v) => MapEntry(k, (v as num).toDouble()));
-        await saveBalances(bal);
+        await _prefs.setString(_kBalancesKey, jsonEncode(bal));
       }
       return true;
     } catch (_) {

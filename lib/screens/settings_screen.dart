@@ -122,6 +122,8 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
     }).where((t) => t.name.isNotEmpty).toList();
   }
 
+  /// Save to SharedPreferences — StorageService.saveConfig automatically
+  /// writes Config.json to storage as well, so no extra export call needed.
   Future<void> _save() async {
     final tierDefs = _currentTierDefs;
 
@@ -150,32 +152,24 @@ class _SettingsScreenState extends State<SettingsScreen> with SingleTickerProvid
       userTiers: userTiers,
       customNames: customNames,
     );
+
+    // saveConfig also calls _autoExport internally → Config.json is updated instantly
     await _storage.saveConfig(newConfig);
     setState(() => _config = newConfig);
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Settings saved'), backgroundColor: kGreen));
+          const SnackBar(content: Text('Saved & exported'), backgroundColor: kGreen));
     }
   }
 
+  /// Explicit export button: re-saves then shows the path in a snackbar.
   Future<void> _exportConfig() async {
-    final confirmed = await _showConfirmDialog(
-      context,
-      title: 'Export Config',
-      message: 'This will save the current settings to:\n${_storage.configExportPath}\n\nAny existing file will be overwritten.',
-      confirmLabel: 'Export',
-      confirmColor: kGreen,
-      icon: Icons.file_upload_outlined,
-    );
-    if (!confirmed) return;
-
     try {
       await _save();
-      final path = await _storage.exportConfig();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Exported to $path'), backgroundColor: kGreen));
+            SnackBar(content: Text('Exported to ${_storage.configExportPath}'), backgroundColor: kGreen));
       }
     } catch (e) {
       if (mounted) {
