@@ -153,6 +153,10 @@ class AppConfig {
   Map<int, TierDefinition> get _tierById =>
       {for (final t in tierDefinitions) t.id: t};
 
+  /// Backward-compat stub — the new model has no global tiers.
+  /// DataService falls back to this when a user has no assigned tiers.
+  List<UserTier> get globalTiers => [];
+
   /// Resolved TierDefinition objects for one user (silently skips unknown IDs).
   List<TierDefinition> tiersForUser(String userId) {
     final byId = _tierById;
