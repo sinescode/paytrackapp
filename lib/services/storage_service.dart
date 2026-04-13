@@ -5,11 +5,15 @@ import 'dart:io';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/tier_model.dart';
 
-const _kConfigKey = 'paytrack_config';
-const _kBalancesKey = 'paytrack_balances';
-const _kAppDir = '/storage/emulated/0/Paytrackapp';
-const _kConfigDir = '$_kAppDir/Config';
-const _kCsvDir = '$_kAppDir/CSV';
+const _kConfigKey      = 'paytrack_config';
+const _kBalancesKey    = 'paytrack_balances';
+const _kBotTokenKey    = 'paytrack_bot_token';
+const _kAdminUserKey   = 'paytrack_admin_username';
+const _kCaptionTplKey  = 'paytrack_caption_template';
+
+const _kAppDir         = '/storage/emulated/0/Paytrackapp';
+const _kConfigDir      = '$_kAppDir/Config';
+const _kCsvDir         = '$_kAppDir/CSV';
 const _kConfigExportFile = '$_kConfigDir/Config.json';
 
 class StorageService {
@@ -31,24 +35,44 @@ class StorageService {
     } catch (_) {}
   }
 
-  // ── Config ──────────────────────────────────────────────────────────────
+  // ── Config (tier defs + assignments + names + balances) ──────────────────
 
   AppConfig loadConfig() {
+    // Load the structural JSON
+    AppConfig cfg;
     final raw = _prefs.getString(_kConfigKey);
-    if (raw == null) return AppConfig();
-    try {
-      return AppConfig.fromJson(jsonDecode(raw) as Map<String, dynamic>);
-    } catch (_) {
-      return AppConfig();
+    if (raw == null) {
+      cfg = AppConfig();
+    } else {
+      try {
+        cfg = AppConfig.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+      } catch (_) {
+        cfg = AppConfig();
+      }
     }
+
+    // Overlay prefs-only fields (token, admin, template)
+    return cfg.copyWith(
+      botToken:        _prefs.getString(_kBotTokenKey)   ?? '',
+      adminUsername:   _prefs.getString(_kAdminUserKey)  ?? 'turja_un',
+      captionTemplate: _prefs.getString(_kCaptionTplKey) ??
+          AppConfig.defaultCaptionTemplate,
+    );
   }
 
   Future<void> saveConfig(AppConfig config) async {
+    // Structural data → JSON key
     await _prefs.setString(_kConfigKey, jsonEncode(config.toJson()));
+
+    // Prefs-only fields → separate keys (never land in Config.json)
+    await _prefs.setString(_kBotTokenKey,   config.botToken);
+    await _prefs.setString(_kAdminUserKey,  config.adminUsername);
+    await _prefs.setString(_kCaptionTplKey, config.captionTemplate);
+
     await _autoExport();
   }
 
-  // ── Balances ────────────────────────────────────────────────────────────
+  // ── Balances ─────────────────────────────────────────────────────────────
 
   Map<String, double> loadBalances() {
     final raw = _prefs.getString(_kBalancesKey);
@@ -69,10 +93,10 @@ class StorageService {
   Future<void> updateBalance(String userId, double amount) async {
     final balances = loadBalances();
     balances[userId] = (balances[userId] ?? 0.0) + amount;
-    await saveBalances(balances); // saveBalances already auto-exports
+    await saveBalances(balances);
   }
 
-  // ── CSV files ────────────────────────────────────────────────────────────
+  // ── CSV files ─────────────────────────────────────────────────────────────
 
   List<File> getCsvFiles() {
     final dir = Directory(_kCsvDir);
@@ -85,62 +109,54 @@ class StorageService {
       ..sort((a, b) => a.path.compareTo(b.path));
   }
 
-  // ── Internal auto-export (silent, no return value) ───────────────────────
+  // ── Auto-export (silent) ──────────────────────────────────────────────────
 
   Future<void> _autoExport() async {
     try {
       await exportConfig();
-    } catch (_) {
-      // Never crash the caller on export failure
-    }
+    } catch (_) {}
   }
 
-  // ── Export config to /storage/0/Paytrackapp/Config/Config.json ──────────
+  // ── Export to /storage/0/Paytrackapp/Config/Config.json ──────────────────
+  // NOTE: botToken / adminUsername / captionTemplate are NOT written here.
 
   Future<String> exportConfig() async {
-    final config = loadConfig();
+    final config   = loadConfig();
     final balances = loadBalances();
-    final export = {
-      'config': config.toJson(),
+    final export   = {
+      'config':   config.toJson()['config'],   // tier_defs, user_tiers, names
       'balances': balances,
     };
     final file = File(_kConfigExportFile);
-    await file.writeAsString(jsonEncode(export), flush: true);
+    await file.writeAsString(
+        const JsonEncoder.withIndent('  ').convert(export),
+        flush: true);
     return _kConfigExportFile;
   }
 
-  // ── Import config from /storage/0/Paytrackapp/Config/Config.json ────────
+  // ── Import from Config.json ───────────────────────────────────────────────
 
   Future<bool> importConfig() async {
     final file = File(_kConfigExportFile);
     if (!file.existsSync()) return false;
-    try {
-      final raw = await file.readAsString();
-      final data = jsonDecode(raw) as Map<String, dynamic>;
-      if (data.containsKey('config')) {
-        final cfg = AppConfig.fromJson(data['config'] as Map<String, dynamic>);
-        await _prefs.setString(_kConfigKey, jsonEncode(cfg.toJson()));
-      }
-      if (data.containsKey('balances')) {
-        final bal = (data['balances'] as Map<String, dynamic>)
-            .map((k, v) => MapEntry(k, (v as num).toDouble()));
-        await _prefs.setString(_kBalancesKey, jsonEncode(bal));
-      }
-      return true;
-    } catch (_) {
-      return false;
-    }
+    return _applyImport(await file.readAsString());
   }
 
-  /// Import config from a user-picked file path
   Future<bool> importConfigFromFile(String path) async {
     final file = File(path);
     if (!file.existsSync()) return false;
     try {
-      final raw = await file.readAsString();
+      return _applyImport(await file.readAsString());
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<bool> _applyImport(String raw) async {
+    try {
       final data = jsonDecode(raw) as Map<String, dynamic>;
       if (data.containsKey('config')) {
-        final cfg = AppConfig.fromJson(data['config'] as Map<String, dynamic>);
+        final cfg = AppConfig.fromJson(data);
         await _prefs.setString(_kConfigKey, jsonEncode(cfg.toJson()));
       }
       if (data.containsKey('balances')) {
@@ -154,7 +170,7 @@ class StorageService {
     }
   }
 
-  String get csvDir => _kCsvDir;
-  String get configDir => _kConfigDir;
+  String get csvDir          => _kCsvDir;
+  String get configDir       => _kConfigDir;
   String get configExportPath => _kConfigExportFile;
 }
