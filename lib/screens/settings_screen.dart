@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import '../models/tier_model.dart';
 import '../services/storage_service.dart';
+import '../services/telegram_service.dart';
 import '../theme.dart';
 
 // ── Shared confirmation dialog ────────────────────────────────────────────────
@@ -174,6 +175,12 @@ class _SettingsScreenState extends State<SettingsScreen>
 
     await _storage.saveConfig(newConfig);
     setState(() => _config = newConfig);
+
+    // Immediately sync the running TelegramService singleton so that any
+    // subsequent send uses the newly saved token — no restart needed.
+    TelegramService().botToken        = newConfig.botToken;
+    TelegramService().adminUsername   = newConfig.adminUsername;
+    TelegramService().captionTemplate = newConfig.captionTemplate;
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -459,6 +466,15 @@ class _TierDefsTab extends StatelessWidget {
 // ── Assignment Tab ────────────────────────────────────────────────────────────
 // Each row = one user → multi-chip selector for their tier IDs.
 
+// Dark-mode palette for the Assignments tab
+const _kAssignBg     = Color(0xFF0F172A);
+const _kAssignCard   = Color(0xFF1E293B);
+const _kAssignBorder = Color(0xFF2D3F55);
+const _kAssignTeal   = Color(0xFF0D9488);
+const _kTextPrimary  = Color(0xFFE2E8F0);
+const _kTextMuted    = Color(0xFF94A3B8);
+const _kTextDim      = Color(0xFF64748B);
+
 class _AssignRow {
   final TextEditingController userId;
   List<int> tierIds;
@@ -467,7 +483,7 @@ class _AssignRow {
 }
 
 class _AssignTab extends StatelessWidget {
-  final List<_AssignRow>   rows;
+  final List<_AssignRow>     rows;
   final List<TierDefinition> tierDefs;
   final VoidCallback         onChanged;
 
@@ -489,127 +505,268 @@ class _AssignTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(children: [
-      Expanded(
-        child: ListView.builder(
-          padding:     const EdgeInsets.all(12),
-          itemCount:   rows.length,
-          itemBuilder: (ctx, i) {
-            final row = rows[i];
-            return Card(
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // User ID + delete button
-                    Row(children: [
-                      Expanded(
-                        child: TextField(
-                          controller:  row.userId,
-                          keyboardType: TextInputType.number,
-                          decoration:  const InputDecoration(
-                              labelText: 'User ID',
-                              prefixIcon: Icon(Icons.person_outline, size: 18)),
-                        ),
-                      ),
-                      IconButton(
-                        icon:      const Icon(Icons.delete_outline, color: kRed),
-                        onPressed: () => _confirmDelete(ctx, i),
-                      ),
-                    ]),
-                    const SizedBox(height: 10),
-
-                    // FilterChip multi-selector
-                    const Text('Assigned Tiers',
-                        style: TextStyle(
-                            fontSize:   12,
-                            fontWeight: FontWeight.w600,
-                            color:      kSlate500)),
-                    const SizedBox(height: 6),
-
-                    if (tierDefs.isEmpty)
-                      const Text('No tier definitions yet.',
-                          style: TextStyle(fontSize: 12, color: kSlate500))
-                    else
-                      Wrap(
-                        spacing:    6,
-                        runSpacing: 4,
-                        children:   tierDefs.map((def) {
-                          final selected = row.tierIds.contains(def.id);
-                          return FilterChip(
-                            label: Text(
-                              '${def.name}  ${def.minOk}–${def.maxOk}',
-                              style: TextStyle(
-                                  fontSize: 11,
-                                  color: selected ? Colors.white : kSlate500),
-                            ),
-                            selected:        selected,
-                            selectedColor:   kGreen,
-                            checkmarkColor:  Colors.white,
-                            backgroundColor: kSlate200,
-                            onSelected: (on) {
-                              if (on) {
-                                if (!row.tierIds.contains(def.id)) {
-                                  row.tierIds.add(def.id);
-                                }
-                              } else {
-                                row.tierIds.remove(def.id);
-                              }
-                              onChanged();
-                            },
-                          );
-                        }).toList(),
-                      ),
-
-                    // Selected chips with remove ×
-                    if (row.tierIds.isNotEmpty) ...[
-                      const SizedBox(height: 6),
-                      Wrap(
-                        spacing:  4,
-                        children: row.tierIds.map((id) {
-                          final def = tierDefs.firstWhere(
-                            (d) => d.id == id,
-                            orElse: () => TierDefinition(
-                                id: id, name: '?',
-                                minOk: 0, maxOk: 0, pricePerOk: 0),
-                          );
-                          return Chip(
-                            label: Text('${def.name} #$id',
-                                style: const TextStyle(fontSize: 10)),
-                            deleteIcon: const Icon(Icons.close, size: 14),
-                            onDeleted:  () {
-                              row.tierIds.remove(id);
-                              onChanged();
-                            },
-                            visualDensity:        VisualDensity.compact,
-                            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          );
-                        }).toList(),
-                      ),
+    return Container(
+      color: _kAssignBg,
+      child: Column(children: [
+        Expanded(
+          child: rows.isEmpty
+              ? Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.group_outlined, size: 52, color: _kTextDim),
+                      const SizedBox(height: 12),
+                      const Text('No assignments yet',
+                          style: TextStyle(fontSize: 15, color: _kTextMuted,
+                              fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 4),
+                      const Text('Tap "Add User" below to get started',
+                          style: TextStyle(fontSize: 12, color: _kTextDim)),
                     ],
-                  ],
+                  ),
+                )
+              : ListView.builder(
+                  padding:     const EdgeInsets.fromLTRB(14, 14, 14, 0),
+                  itemCount:   rows.length,
+                  itemBuilder: (ctx, i) {
+                    final row = rows[i];
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      decoration: BoxDecoration(
+                        color:        _kAssignCard,
+                        borderRadius: BorderRadius.circular(16),
+                        border:       Border.all(color: _kAssignBorder),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // ── Header: index badge + User ID + delete ──
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(14, 14, 8, 0),
+                            child: Row(children: [
+                              Container(
+                                width: 28, height: 28,
+                                decoration: BoxDecoration(
+                                  color: _kAssignTeal.withOpacity(0.18),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                alignment: Alignment.center,
+                                child: Text('${i + 1}',
+                                    style: const TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w700,
+                                        color: _kAssignTeal)),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: TextField(
+                                  controller:   row.userId,
+                                  keyboardType: TextInputType.number,
+                                  style: const TextStyle(
+                                      color: _kTextPrimary,
+                                      fontFamily: 'monospace',
+                                      fontSize: 14),
+                                  decoration: InputDecoration(
+                                    labelText:  'Telegram User ID',
+                                    labelStyle: const TextStyle(
+                                        color: _kTextDim, fontSize: 13),
+                                    prefixIcon: const Icon(Icons.person_outline,
+                                        size: 18, color: _kTextDim),
+                                    filled:    true,
+                                    fillColor: _kAssignBg,
+                                    contentPadding: const EdgeInsets.symmetric(
+                                        horizontal: 12, vertical: 10),
+                                    enabledBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(10),
+                                        borderSide: const BorderSide(
+                                            color: _kAssignBorder)),
+                                    focusedBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(10),
+                                        borderSide: const BorderSide(
+                                            color: _kAssignTeal, width: 2)),
+                                  ),
+                                ),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.delete_outline,
+                                    color: kRed, size: 20),
+                                tooltip:  'Remove',
+                                onPressed: () => _confirmDelete(ctx, i),
+                              ),
+                            ]),
+                          ),
+
+                          // ── Section divider ──
+                          Padding(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 14, vertical: 10),
+                            child: Row(children: [
+                              const Icon(Icons.layers_outlined,
+                                  size: 13, color: _kTextDim),
+                              const SizedBox(width: 5),
+                              const Text('ASSIGNED TIERS',
+                                  style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w700,
+                                      color: _kTextDim,
+                                      letterSpacing: 1.1)),
+                              const SizedBox(width: 8),
+                              Expanded(child: Container(
+                                  height: 1, color: _kAssignBorder)),
+                              if (row.tierIds.isNotEmpty) ...[
+                                const SizedBox(width: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 7, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: _kAssignTeal.withOpacity(0.18),
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: Text('${row.tierIds.length}',
+                                      style: const TextStyle(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w700,
+                                          color: _kAssignTeal)),
+                                ),
+                              ],
+                            ]),
+                          ),
+
+                          // ── Tier toggle chips ──
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+                            child: tierDefs.isEmpty
+                                ? Container(
+                                    padding: const EdgeInsets.all(10),
+                                    decoration: BoxDecoration(
+                                      color: _kAssignBg,
+                                      borderRadius: BorderRadius.circular(10),
+                                      border: Border.all(color: _kAssignBorder),
+                                    ),
+                                    child: const Row(children: [
+                                      Icon(Icons.info_outline,
+                                          size: 14, color: _kTextDim),
+                                      SizedBox(width: 6),
+                                      Expanded(
+                                        child: Text(
+                                          'No tier definitions yet — add them in the Tiers tab.',
+                                          style: TextStyle(
+                                              fontSize: 12, color: _kTextDim),
+                                        ),
+                                      ),
+                                    ]),
+                                  )
+                                : Wrap(
+                                    spacing: 8, runSpacing: 8,
+                                    children: tierDefs.map((def) {
+                                      final selected =
+                                          row.tierIds.contains(def.id);
+                                      return GestureDetector(
+                                        onTap: () {
+                                          if (selected) {
+                                            row.tierIds.remove(def.id);
+                                          } else {
+                                            if (!row.tierIds.contains(def.id)) {
+                                              row.tierIds.add(def.id);
+                                            }
+                                          }
+                                          onChanged();
+                                        },
+                                        child: AnimatedContainer(
+                                          duration: const Duration(
+                                              milliseconds: 160),
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 12, vertical: 7),
+                                          decoration: BoxDecoration(
+                                            color: selected
+                                                ? _kAssignTeal.withOpacity(0.18)
+                                                : _kAssignBg,
+                                            borderRadius:
+                                                BorderRadius.circular(10),
+                                            border: Border.all(
+                                              color: selected
+                                                  ? _kAssignTeal
+                                                  : _kAssignBorder,
+                                              width: selected ? 1.5 : 1,
+                                            ),
+                                          ),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Icon(
+                                                selected
+                                                    ? Icons.check_circle
+                                                    : Icons.circle_outlined,
+                                                size:  13,
+                                                color: selected
+                                                    ? _kAssignTeal
+                                                    : _kTextDim,
+                                              ),
+                                              const SizedBox(width: 5),
+                                              Text(def.name,
+                                                  style: TextStyle(
+                                                      fontSize: 12,
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                      color: selected
+                                                          ? _kAssignTeal
+                                                          : _kTextMuted)),
+                                              const SizedBox(width: 5),
+                                              Text(
+                                                '${def.minOk}–${def.maxOk}',
+                                                style: TextStyle(
+                                                    fontSize: 10,
+                                                    color: selected
+                                                        ? _kAssignTeal
+                                                            .withOpacity(0.7)
+                                                        : _kTextDim),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      );
+                                    }).toList(),
+                                  ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
                 ),
-              ),
-            );
-          },
         ),
-      ),
-      Padding(
-        padding: const EdgeInsets.all(12),
-        child: SizedBox(
-          width: double.infinity,
-          child: OutlinedButton.icon(
-            onPressed: () {
-              rows.add(_AssignRow(userId: TextEditingController(), tierIds: []));
-              onChanged();
-            },
-            icon:  const Icon(Icons.person_add_outlined),
-            label: const Text('Add User Assignment'),
+
+        // ── Add button ──
+        Container(
+          padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
+          decoration: BoxDecoration(
+            color:  _kAssignCard,
+            border: Border(top: BorderSide(color: _kAssignBorder)),
+          ),
+          child: SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _kAssignTeal,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+                padding:   const EdgeInsets.symmetric(vertical: 13),
+                elevation: 0,
+              ),
+              onPressed: () {
+                rows.add(_AssignRow(
+                    userId: TextEditingController(), tierIds: []));
+                onChanged();
+              },
+              icon:  const Icon(Icons.person_add_outlined, size: 18),
+              label: const Text('Add User Assignment',
+                  style: TextStyle(
+                      fontWeight: FontWeight.w600, fontSize: 14)),
+            ),
           ),
         ),
-      ),
-    ]);
+      ]),
+    );
   }
 }
 
