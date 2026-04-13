@@ -201,7 +201,7 @@ class _UserDetailScreenState extends State<UserDetailScreen> {
                               fontFamily: 'monospace')),
                     ],
                   ),
-                  const Divider(height: 28, color: kSlate100),
+                  const Divider(height: 28, color: kSlate200),
                   Text('PENDING BALANCE',
                       style: TextStyle(
                           fontSize: 11,
@@ -223,7 +223,7 @@ class _UserDetailScreenState extends State<UserDetailScreen> {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                         decoration: BoxDecoration(
-                            color: isCredit ? const Color(0xFFD1FAE5) : const Color(0xFFFEE2E2),
+                            color: isCredit ? const Color(0xFF064E3B) : const Color(0xFF7F1D1D),
                             borderRadius: BorderRadius.circular(999)),
                         child: Row(
                           children: [
@@ -235,7 +235,7 @@ class _UserDetailScreenState extends State<UserDetailScreen> {
                                 style: TextStyle(
                                     fontSize: 12,
                                     fontWeight: FontWeight.w600,
-                                    color: isCredit ? const Color(0xFF065F46) : const Color(0xFF991B1B),
+                                    color: isCredit ? const Color(0xFF34D399) : const Color(0xFFF87171),
                                     fontFamily: 'monospace')),
                           ],
                         ),
@@ -336,7 +336,7 @@ class _UserDetailScreenState extends State<UserDetailScreen> {
                     ],
                   ),
                 ),
-                const Divider(height: 1, color: kSlate100),
+                const Divider(height: 1, color: kSlate200),
                 if (_entries.isEmpty)
                   const Padding(
                     padding: EdgeInsets.all(24),

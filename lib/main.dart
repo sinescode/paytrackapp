@@ -31,6 +31,8 @@ class PayTrackApp extends StatelessWidget {
       title: 'PayTrack',
       debugShowCheckedModeBanner: false,
       theme: buildTheme(),
+      darkTheme: buildTheme(),
+      themeMode: ThemeMode.dark,
       home: const OverviewScreen(),
     );
   }

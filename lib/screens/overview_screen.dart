@@ -573,6 +573,7 @@ class _SendAllDialogState extends State<_SendAllDialog> {
                 value: pct,
                 borderRadius: BorderRadius.circular(8),
                 backgroundColor: kSlate200,
+                color: kBlue,
               ),
               const SizedBox(height: 8),
               Row(
