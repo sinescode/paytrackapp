@@ -291,7 +291,7 @@ class _SettingsScreenState extends State<SettingsScreen>
           Container(
             decoration: const BoxDecoration(
                 border: Border(top: BorderSide(color: kSlate200)),
-                color: Colors.white),
+                color: kSlate100),
             padding: const EdgeInsets.all(12),
             child: Row(children: [
               Expanded(
