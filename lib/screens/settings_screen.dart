@@ -1339,7 +1339,7 @@ class _NamesTabState extends State<_NamesTab> {
                   horizontal: 10, vertical: 9),
               decoration: BoxDecoration(
                 border: Border.all(
-                    color: _searchById ? kGreen : kSlate300),
+                    color: _searchById ? kGreen : KSlate400),
                 borderRadius: BorderRadius.circular(10),
                 color: _searchById ? kGreen.withOpacity(0.08) : kSlate100,
               ),
