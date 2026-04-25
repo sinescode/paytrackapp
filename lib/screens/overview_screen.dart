@@ -39,13 +39,14 @@ class _OverviewScreenState extends State<OverviewScreen> {
 
   void _load() {
     setState(() => _loading = true);
-    final users = _data.buildUserSummaries();
-    final total = users.fold(0.0, (s, u) => s + u.pending);
-    setState(() {
-      _users = users;
-      _filtered = users;
-      _totalPending = total;
-      _loading = false;
+    _data.buildUserSummariesAsync().then((users) {
+      final total = users.fold(0.0, (s, u) => s + u.pending);
+      setState(() {
+        _users = users;
+        _filtered = users;
+        _totalPending = total;
+        _loading = false;
+      });
     });
   }
 

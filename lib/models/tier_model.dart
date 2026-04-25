@@ -126,6 +126,11 @@ class AppConfig {
   /// Per-user balance (negative = credit owed to user).
   final Map<String, double> balances;
 
+  /// Frozen tier prices per CSV filename.
+  /// Written once the first time a CSV file is seen. Never overwritten.
+  /// Shape: { "2025-01.csv": { tierId: pricePerOk, ... }, ... }
+  final Map<String, Map<int, double>> csvTierSnapshots;
+
   // ── Default caption template ──────────────────────────────────────────────
   static const String defaultCaptionTemplate =
       '🧾 <b>Payment Receipt</b>\n\n'
@@ -142,11 +147,13 @@ class AppConfig {
     Map<String, List<int>>? userTierIds,
     Map<String, String>? customNames,
     Map<String, double>? balances,
+    Map<String, Map<int, double>>? csvTierSnapshots,
   })  : captionTemplate = captionTemplate ?? AppConfig.defaultCaptionTemplate,
         tierDefinitions = tierDefinitions ?? [],
         userTierIds = userTierIds ?? {},
         customNames = customNames ?? {},
-        balances = balances ?? {};
+        balances = balances ?? {},
+        csvTierSnapshots = csvTierSnapshots ?? {};
 
   // ── Resolve helpers ───────────────────────────────────────────────────────
 
@@ -211,11 +218,24 @@ class AppConfig {
     (root['balances'] as Map<String, dynamic>? ?? {})
         .forEach((k, v) => balances[k] = (v as num).toDouble());
 
+    // csv_tier_snapshots (inside config)
+    final csvTierSnapshots = <String, Map<int, double>>{};
+    (cfg['csv_tier_snapshots'] as Map<String, dynamic>? ?? {})
+        .forEach((filename, rawMap) {
+      final priceById = <int, double>{};
+      (rawMap as Map<String, dynamic>).forEach((idStr, price) {
+        final id = int.tryParse(idStr);
+        if (id != null) priceById[id] = (price as num).toDouble();
+      });
+      csvTierSnapshots[filename] = priceById;
+    });
+
     return AppConfig(
       tierDefinitions: tierDefs,
       userTierIds: userTierIds,
       customNames: customNames,
       balances: balances,
+      csvTierSnapshots: csvTierSnapshots,
     );
   }
 
@@ -229,6 +249,12 @@ class AppConfig {
           'tier_definitions': tierDefinitions.map((t) => t.toJson()).toList(),
           'user_tiers': userTierIds.map((uid, ids) => MapEntry(uid, ids)),
           'custom_names': customNames,
+          'csv_tier_snapshots': csvTierSnapshots.map(
+            (filename, priceById) => MapEntry(
+              filename,
+              priceById.map((id, price) => MapEntry(id.toString(), price)),
+            ),
+          ),
         },
         'balances': balances,
       };
@@ -246,6 +272,7 @@ class AppConfig {
     Map<String, List<int>>? userTierIds,
     Map<String, String>? customNames,
     Map<String, double>? balances,
+    Map<String, Map<int, double>>? csvTierSnapshots,
   }) =>
       AppConfig(
         botToken: botToken ?? this.botToken,
@@ -259,6 +286,11 @@ class AppConfig {
             },
         customNames: customNames ?? Map.from(this.customNames),
         balances: balances ?? Map.from(this.balances),
+        csvTierSnapshots: csvTierSnapshots ??
+            {
+              for (final e in this.csvTierSnapshots.entries)
+                e.key: Map<int, double>.from(e.value)
+            },
       );
 
   // ── Tier mutation helpers ─────────────────────────────────────────────────

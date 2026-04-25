@@ -39,14 +39,15 @@ class _UserDetailScreenState extends State<UserDetailScreen> {
   }
 
   void _load() {
-    final all = _data.loadAllData();
-    final config = _storage.loadConfig();
-    final balances = _storage.loadBalances();
-    final name = config.customNames[widget.userId];
-    setState(() {
-      _displayName = (name != null && name.isNotEmpty) ? name : widget.userId;
-      _entries = _data.getUserEntries(all, widget.userId);
-      _pending = _data.getNetPending(all, widget.userId, balances);
+    _data.loadAllDataAsync().then((all) {
+      final config = _storage.loadConfig();
+      final balances = _storage.loadBalances();
+      final name = config.customNames[widget.userId];
+      setState(() {
+        _displayName = (name != null && name.isNotEmpty) ? name : widget.userId;
+        _entries = _data.getUserEntries(all, widget.userId);
+        _pending = _data.getNetPending(all, widget.userId, balances);
+      });
     });
   }
 
