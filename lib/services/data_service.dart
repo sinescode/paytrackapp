@@ -30,6 +30,58 @@ class DataService {
     return (0.0, 0.0);
   }
 
+  // ── Rate snapshot ───────────────────────────────────────────────────────
+  //
+  // Writes the resolved pricePerOk into the 'Rate' column of a CSV row so
+  // that future reloads use the frozen value instead of re-running tier lookup.
+  // If the 'Rate' column doesn't exist yet, it is appended to every row.
+  //
+  // Parameters:
+  //   file      – the CSV File being written back
+  //   rowIndex  – 1-based index of the data row inside [allRows]
+  //   rateColIdx – current index of the Rate column (-1 if absent)
+  //   rate      – the resolved pricePerOk to save
+  //   allRows   – all parsed rows (header at index 0)
+  void _snapshotRate(
+    File file,
+    int rowIndex,
+    int rateColIdx,
+    double rate,
+    List<List<dynamic>> allRows,
+  ) {
+    try {
+      if (rateColIdx == -1) {
+        // Add 'Rate' header and fill every data row with its current value.
+        // We only have the rate for this one row right now — other rows will
+        // be filled on their own first-load pass.  Set them to '' so they
+        // trigger tier lookup on next reload.
+        allRows[0].add('Rate');
+        for (int i = 1; i < allRows.length; i++) {
+          allRows[i].add(i == rowIndex ? rate.toString() : '');
+        }
+      } else {
+        // Column already exists — just update this row.
+        allRows[rowIndex][rateColIdx] = rate.toString();
+      }
+
+      // Re-encode the entire file.
+      final buffer = StringBuffer();
+      for (final row in allRows) {
+        buffer.writeln(row.map((cell) {
+          final s = cell.toString();
+          // Quote cells that contain commas, quotes, or newlines.
+          if (s.contains(',') || s.contains('"') || s.contains('\n')) {
+            return '"${s.replaceAll('"', '""')}"';
+          }
+          return s;
+        }).join(','));
+      }
+      file.writeAsStringSync(buffer.toString());
+    } catch (_) {
+      // Snapshot is best-effort — a write failure must never crash the UI.
+    }
+  }
+
   // ── CSV parsing ─────────────────────────────────────────────────────────
 
   List<CsvEntry> parseCsvFile(File file, AppConfig config) {
@@ -71,13 +123,34 @@ class DataService {
         final bkash = iBkash >= 0 ? row[iBkash].toString().trim() : 'Not Provided';
         final rocket = iRocket >= 0 ? row[iRocket].toString().trim() : 'Not Provided';
 
-        var (pricePerOk, total) = calculateTotal(okCount, config, userId);
+        // ── Price resolution (priority order) ────────────────────────────
+        // 1. Use the Rate already written in the CSV row (frozen at import).
+        //    This prevents tier price changes from retroactively affecting
+        //    historical entries.
+        // 2. Only fall back to live tier lookup when Rate is absent/zero
+        //    (e.g., a freshly dropped file that has never been priced).
+        // 3. After a successful tier lookup, write the Rate back into the CSV
+        //    so future reloads use the frozen value (see _snapshotRate below).
 
-        if (pricePerOk == 0.0 && total == 0.0) {
-          final rateStr = iRate >= 0 ? row[iRate].toString().trim() : '';
-          final rate = double.tryParse(rateStr) ?? 0.0;
-          pricePerOk = rate;
-          total = okCount * rate;
+        final savedRateStr = iRate >= 0 ? row[iRate].toString().trim() : '';
+        final savedRate = double.tryParse(savedRateStr) ?? 0.0;
+
+        double pricePerOk;
+        double total;
+
+        if (savedRate > 0.0) {
+          // ✅ Rate already frozen in file — use it directly.
+          pricePerOk = savedRate;
+          total = okCount * savedRate;
+        } else {
+          // 🔍 No saved rate — resolve from current tier definitions.
+          (pricePerOk, total) = calculateTotal(okCount, config, userId);
+
+          // Persist the resolved rate back into the CSV so it is frozen
+          // from this point forward (won't change when tiers are edited).
+          if (pricePerOk > 0.0) {
+            _snapshotRate(file, i, iRate, pricePerOk, lines);
+          }
         }
 
         rows.add(CsvEntry(
